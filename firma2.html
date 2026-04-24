@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Firma Documento</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<style>
+:root {
+  --ink: #0f0f0f;
+  --ink2: #3a3a3a;
+  --ink3: #888;
+  --paper: #fafaf8;
+  --paper2: #f0f0ec;
+  --accent: #e8a020;
+  --accent2: #d4911a;
+  --green: #2d7a3a;
+  --green-bg: #eaf3ec;
+  --red: #c0392b;
+  --border: #e0e0dc;
+  --radius: 12px;
+  --font: 'DM Sans', sans-serif;
+  --mono: 'DM Mono', monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+body { font-family: var(--font); background: var(--paper); color: var(--ink); min-height: 100vh; }
+
+/* HEADER */
+.hdr {
+  background: var(--ink);
+  color: #fff;
+  padding: 0 18px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 200;
+}
+.hdr-logo { font-size: 15px; font-weight: 700; letter-spacing: -.3px; }
+.hdr-logo em { color: var(--accent); font-style: normal; }
+.hdr-modulo { font-size: 11px; color: #888; font-weight: 400; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prog-track { height: 3px; background: #222; }
+.prog-bar { height: 100%; background: var(--accent); transition: width .5s cubic-bezier(.4,0,.2,1); }
+
+/* STEPS */
+.step { display: none; min-height: calc(100vh - 55px); }
+.step.active { display: block; }
+.wrap { max-width: 600px; margin: 0 auto; padding: 20px 16px 48px; }
+
+/* LOADING */
+.loading-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 55px);
+  gap: 16px;
+}
+.spinner {
+  width: 40px; height: 40px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { font-size: 13px; color: var(--ink3); }
+
+/* CHIP + LABEL */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--accent);
+  margin-bottom: 5px;
+}
+.page-title { font-size: 22px; font-weight: 700; line-height: 1.2; margin-bottom: 4px; }
+.page-sub { font-size: 13px; color: var(--ink3); line-height: 1.5; margin-bottom: 20px; }
+
+/* PDF VIEWER */
+.pdf-viewer-wrap {
+  background: #555;
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 16px;
+  position: relative;
+}
+.pdf-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #333;
+  color: #fff;
+  font-size: 12px;
+}
+.pdf-nav-btn {
+  background: none;
+  border: 1px solid #555;
+  color: #fff;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: var(--font);
+}
+.pdf-nav-btn:disabled { opacity: .3; cursor: not-allowed; }
+.pdf-canvas-wrap { overflow-y: auto; max-height: 58vh; background: #666; }
+#pdfCanvas { display: block; margin: 0 auto; max-width: 100%; }
+
+/* FIRME LIST (step 1 - panoramica sezioni) */
+.firme-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+.firma-item {
+  background: #fff;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: border-color .15s;
+}
+.firma-item.required { border-color: var(--accent); }
+.firma-item.done { border-color: var(--green); background: var(--green-bg); }
+.firma-num {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: var(--paper2);
+  border: 1.5px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  color: var(--ink3);
+}
+.firma-item.done .firma-num { background: var(--green); border-color: var(--green); color: #fff; }
+.firma-item.required .firma-num { background: var(--accent); border-color: var(--accent); color: #fff; }
+.firma-info { flex: 1; }
+.firma-nome { font-size: 13px; font-weight: 600; }
+.firma-pg { font-size: 10px; color: var(--ink3); margin-top: 1px; }
+.firma-stato {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 20px;
+  background: var(--paper2);
+  color: var(--ink3);
+}
+.firma-item.done .firma-stato { background: var(--green-bg); color: var(--green); }
+.firma-item.required .firma-stato { background: #fef3e2; color: var(--accent2); }
+
+/* FIRMA CANVAS AREA */
+.firma-section {
+  background: #fff;
+  border-radius: var(--radius);
+  border: 1.5px solid var(--border);
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+.firma-section-hdr {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.firma-section-title { font-size: 13px; font-weight: 600; }
+.firma-section-pg { font-size: 10px; color: var(--ink3); font-family: var(--mono); }
+.canvas-wrap {
+  position: relative;
+  touch-action: none;
+  cursor: crosshair;
+  background: #fff;
+}
+.canvas-wrap canvas { display: block; width: 100%; }
+.canvas-hint {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  transition: opacity .25s;
+  user-select: none;
+}
+.canvas-hint.hidden { opacity: 0; }
+.canvas-hint-icon { font-size: 26px; margin-bottom: 4px; }
+.canvas-hint-txt { font-size: 11px; color: #bbb; }
+.firma-section-footer {
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.firma-section-footer small { font-size: 10px; color: var(--ink3); }
+.btn-clear {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 10px;
+  font-family: var(--font);
+  color: var(--ink3);
+  cursor: pointer;
+}
+.btn-clear:hover { background: var(--paper2); }
+
+/* LUOGO DATA */
+.luogo-data {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: var(--ink3);
+}
+.field input {
+  font-size: 13px;
+  padding: 9px 11px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  font-family: var(--font);
+  background: #fff;
+  color: var(--ink);
+  transition: border-color .15s;
+}
+.field input:focus { outline: none; border-color: var(--ink); }
+
+/* BUTTONS */
+.btn-primary {
+  width: 100%;
+  padding: 14px;
+  background: var(--ink);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background .15s, transform .1s;
+  letter-spacing: -.1px;
+}
+.btn-primary:active { transform: scale(.98); }
+.btn-primary:hover { background: #222; }
+.btn-primary:disabled { background: #ccc; cursor: not-allowed; }
+.btn-primary.amber { background: var(--accent); }
+.btn-primary.amber:hover { background: var(--accent2); }
+.btn-primary.green { background: var(--green); }
+.btn-secondary {
+  width: 100%;
+  margin-top: 8px;
+  padding: 12px;
+  background: #fff;
+  color: var(--ink);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: background .15s;
+}
+.btn-secondary:hover { background: var(--paper2); }
+
+/* PROGRESS FIRMA */
+.firme-progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  background: #fff;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+}
+.firme-progress-txt { font-size: 12px; color: var(--ink3); }
+.firme-progress-count { font-size: 18px; font-weight: 700; color: var(--ink); font-family: var(--mono); }
+.firme-dots { display: flex; gap: 4px; }
+.firma-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  transition: background .3s;
+}
+.firma-dot.done { background: var(--green); }
+.firma-dot.current { background: var(--accent); }
+
+/* SUCCESS */
+.success-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 55px);
+  padding: 24px 16px;
+}
+.success-icon-big {
+  width: 80px; height: 80px;
+  background: var(--green-bg);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  margin-bottom: 20px;
+  animation: pop .4s cubic-bezier(.34,1.56,.64,1);
+}
+@keyframes pop { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.success-title { font-size: 24px; font-weight: 700; margin-bottom: 6px; text-align: center; }
+.success-sub { font-size: 13px; color: var(--ink3); text-align: center; line-height: 1.6; margin-bottom: 24px; }
+.success-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--paper2);
+  border-radius: 20px;
+  padding: 7px 16px;
+  font-size: 11px;
+  color: var(--ink3);
+  margin-bottom: 24px;
+  font-family: var(--mono);
+}
+
+/* TOAST */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(10px);
+  background: var(--ink);
+  color: #fff;
+  padding: 9px 18px;
+  border-radius: 20px;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity .25s, transform .25s;
+  pointer-events: none;
+  z-index: 999;
+  white-space: nowrap;
+  font-family: var(--font);
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ERROR */
+.error-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 55px);
+  padding: 24px;
+  text-align: center;
+  gap: 12px;
+}
+.error-icon { font-size: 48px; }
+.error-title { font-size: 18px; font-weight: 700; }
+.error-sub { font-size: 13px; color: var(--ink3); line-height: 1.6; }
+
+@media (max-width: 420px) {
+  .page-title { font-size: 18px; }
+  .luogo-data { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-logo">⚡ Gruppo <em>tu.telati</em></div>
+  <div class="hdr-modulo" id="hdrModulo">Caricamento...</div>
+</div>
+<div class="prog-track"><div class="prog-bar" id="progBar" style="width:5%"></div></div>
+
+<!-- STEP 0: Loading -->
+<div class="step active" id="step0">
+  <div class="loading-screen">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loadingTxt">Caricamento modulo...</div>
+  </div>
+</div>
+
+<!-- STEP 1: Anteprima e selezione sezioni -->
+<div class="step" id="step1">
+  <div class="wrap">
+    <div class="chip">📄 Passo 1 di 3</div>
+    <div class="page-title" id="s1Title">Verifica il documento</div>
+    <div class="page-sub">Scorri il documento, poi conferma le sezioni da firmare.</div>
+
+    <!-- PDF viewer con navigazione pagine -->
+    <div class="pdf-viewer-wrap">
+      <div class="pdf-nav">
+        <button class="pdf-nav-btn" id="btnPrevPg" onclick="cambiaPagina(-1)">← Prec.</button>
+        <span id="pgLabel" style="font-size:12px">Pagina 1</span>
+        <button class="pdf-nav-btn" id="btnNextPg" onclick="cambiaPagina(1)">Succ. →</button>
+      </div>
+      <div class="pdf-canvas-wrap">
+        <canvas id="pdfCanvas"></canvas>
+      </div>
+    </div>
+
+    <!-- Sezioni da firmare -->
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--ink3);margin-bottom:8px">
+      Sezioni da firmare
+    </div>
+    <div class="firme-list" id="firmeList"></div>
+
+    <button class="btn-primary amber" onclick="avviaFirma()" id="btnAvviaFirma">
+      ✍️ Inizia a firmare
+    </button>
+  </div>
+</div>
+
+<!-- STEP 2: Firma sequenziale -->
+<div class="step" id="step2">
+  <div class="wrap">
+    <div class="chip" id="s2Chip">✍️ Firma 1 di N</div>
+    <div class="page-title" id="s2Title">Firma la sezione</div>
+    <div class="page-sub" id="s2Sub">Firma con il dito nello spazio sottostante.</div>
+
+    <!-- Dots progress -->
+    <div class="firme-progress">
+      <div>
+        <div class="firme-progress-txt">Progresso firme</div>
+        <div class="firme-progress-count" id="firmeProgressCount">0 / 0</div>
+      </div>
+      <div class="firme-dots" id="firmeDots"></div>
+    </div>
+
+    <!-- Contesto PDF (miniatura pagina corrente) -->
+    <div style="margin-bottom:12px;border-radius:var(--radius);overflow:hidden;border:1.5px solid var(--border)">
+      <div style="padding:6px 12px;background:var(--paper2);font-size:10px;color:var(--ink3);font-family:var(--mono);border-bottom:1px solid var(--border)">
+        📄 <span id="s2PgLabel">Pagina —</span> · <span id="s2SezLabel">—</span>
+      </div>
+      <div style="background:#888;max-height:30vh;overflow:hidden">
+        <canvas id="pdfCanvasMini" style="display:block;width:100%;opacity:.85"></canvas>
+      </div>
+    </div>
+
+    <!-- Area firma -->
+    <div class="firma-section">
+      <div class="firma-section-hdr">
+        <div class="firma-section-title" id="firmaCurrentTitle">—</div>
+        <div class="firma-section-pg" id="firmaCurrentPg">pag. —</div>
+      </div>
+      <div class="canvas-wrap" id="canvasWrap">
+        <canvas id="firmaCanvas" height="160"></canvas>
+        <div class="canvas-hint" id="canvasHint">
+          <div class="canvas-hint-icon">✍️</div>
+          <div class="canvas-hint-txt">Firma qui con il dito</div>
+        </div>
+      </div>
+      <div class="firma-section-footer">
+        <small>Firma del richiedente</small>
+        <button class="btn-clear" onclick="cancellaFirmaCorrente()">✕ Cancella</button>
+      </div>
+    </div>
+
+    <button class="btn-primary amber" id="btnNextFirma" onclick="nextFirma()" disabled>
+      Conferma e prosegui →
+    </button>
+    <button class="btn-secondary" onclick="goStep(1)">← Torna al documento</button>
+  </div>
+</div>
+
+<!-- STEP 2b: Luogo e data (dopo tutte le firme) -->
+<div class="step" id="step2b">
+  <div class="wrap">
+    <div class="chip">📋 Passo 2b di 3</div>
+    <div class="page-title">Luogo e data</div>
+    <div class="page-sub">Inserisci luogo e data per completare il documento.</div>
+
+    <div class="luogo-data">
+      <div class="field">
+        <label>Luogo</label>
+        <input type="text" id="inp_luogo" placeholder="es. Bari">
+      </div>
+      <div class="field">
+        <label>Data</label>
+        <input type="date" id="inp_data">
+      </div>
+    </div>
+
+    <!-- Riepilogo firme -->
+    <div style="background:#fff;border:1.5px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:16px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--ink3);margin-bottom:10px">
+        Riepilogo firme
+      </div>
+      <div id="firmeRiepilogo" style="display:flex;flex-direction:column;gap:6px"></div>
+    </div>
+
+    <button class="btn-primary green" onclick="confermaEInvia()" id="btnInvia">
+      📤 Invia documento firmato
+    </button>
+    <button class="btn-secondary" onclick="goStep(2)">← Modifica firme</button>
+  </div>
+</div>
+
+<!-- STEP 3: Completato -->
+<div class="step" id="step3">
+  <div class="success-wrap">
+    <div class="success-icon-big">✅</div>
+    <div class="success-title">Documento inviato!</div>
+    <div class="success-sub">
+      Le tue firme sono state acquisite correttamente.<br>
+      Il documento è stato inviato al consulente.
+    </div>
+    <div class="success-pill" id="successPill">📄 —</div>
+    <button class="btn-primary" onclick="scaricaCopia()" id="btnScarica" style="max-width:360px;width:100%">
+      ⬇️ Scarica copia PDF
+    </button>
+    <p style="font-size:10px;color:var(--ink3);margin-top:14px;text-align:center">
+      Gruppo tu.telati — Emanuele e Carmen
+    </p>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== FIREBASE =====
+const firebaseConfig = {
+  apiKey: "AIzaSyCVqrDWJDLtyGUzPBtvkHOMxBERO4ixKX0",
+  authDomain: "crm-servizi.firebaseapp.com",
+  projectId: "crm-servizi",
+  storageBucket: "crm-servizi.firebasestorage.app",
+  messagingSenderId: "611069430965",
+  appId: "1:611069430965:web:6b1f36552c007c438942fc"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ===== PARAMS =====
+const P = new URLSearchParams(window.location.search);
+const docInvioId = P.get('did') || '';  // nuovo sistema
+const templateId  = P.get('tid') || ''; // vecchio fallback
+const clienteId   = P.get('cid') || '';
+let clienteNome = P.get('nome') || '';
+let nomeModulo  = P.get('modulo') || 'Documento';
+const firmeRichieste = (P.get('firme') || '').split(',').map(Number).filter(n => !isNaN(n));
+
+let templateData = null;
+let invioData = null;
+let firmaDataUrl = null;
+let canvas_firma, ctx_firma, disegnando = false, hasFirma = false, lx = 0, ly = 0;
+
+document.getElementById('hdrModulo').textContent = nomeModulo;
+document.getElementById('inp_data').value = new Date().toISOString().split('T')[0];
+document.getElementById('inp_luogo').value = P.get('lnasc') || '';
+
+async function init() {
+  const errEl = document.getElementById('step0');
+  try {
+    if (docInvioId) {
+      // Nuovo sistema: legge tutto da mod_invii
+      setLoading('Caricamento documento...');
+      const invioDoc = await db.collection('mod_invii').doc(docInvioId).get();
+      if (!invioDoc.exists) { showError('Link non valido', 'Contatta il consulente per un nuovo link.'); return; }
+      invioData = invioDoc.data();
+      nomeModulo = invioData.nomeModulo || nomeModulo;
+      clienteNome = invioData.nomeCliente || clienteNome;
+      document.getElementById('hdrModulo').textContent = nomeModulo;
+      setLoading('Caricamento modulo...');
+      const tplDoc = await db.collection('mod_templates').doc(invioData.templateId).get();
+      if (!tplDoc.exists) { showError('Modulo non trovato', 'Contatta il consulente.'); return; }
+      templateData = tplDoc.data();
+    } else if (templateId) {
+      // Vecchio sistema fallback
+      setLoading('Caricamento modulo...');
+      const tplDoc = await db.collection('mod_templates').doc(templateId).get();
+      if (!tplDoc.exists) { showError('Modulo non trovato', 'Contatta il consulente.'); return; }
+      templateData = tplDoc.data();
+    } else {
+      showError('Link non valido', 'Contatta il consulente per un nuovo link.');
+      return;
+    }
+
+    setLoading('Preparazione PDF...');
+    const b64 = templateData.pdfData.split(',')[1];
+    const bin = atob(b64);
+    pdfBytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) pdfBytes[i] = bin.charCodeAt(i);
+    pdfDoc = await pdfjsLib.getDocument({ data: pdfBytes }).promise;
+    totalPages = pdfDoc.numPages;
+
+    // Determina firme attive
+    const tutteFirme = (templateData.elementi || []).filter(e => e.tipo === 'firma').length > 0
+      ? (templateData.elementi || []).filter(e => e.tipo === 'firma')
+      : (templateData.firme || []);
+    const idxDaUsare = (invioData && invioData.firmeIdx && invioData.firmeIdx.length > 0)
+      ? invioData.firmeIdx
+      : (firmeRichieste.length > 0 ? firmeRichieste : null);
+
+    if (idxDaUsare) {
+      firmeAttive = idxDaUsare.filter(i => i < tutteFirme.length).map(i => ({ ...tutteFirme[i], index: i, dataUrl: null }));
+    } else {
+      firmeAttive = tutteFirme.map((f, i) => ({ ...f, index: i, dataUrl: null }));
+    }
+
+    if (!firmeAttive.length) { showError('Nessuna firma richiesta', 'Contatta il consulente.'); return; }
+
+    await renderPdfPage(currentPage, 'pdfCanvas');
+    aggiornaNavPdf();
+    renderFirmeList();
+    document.getElementById('s1_title').textContent = nomeModulo;
+    goStep(1);
+  } catch(e) {
+    showError('Errore: ' + e.message, 'Riprova o contatta il consulente.');
+  }
+}
+
+init();
+</script>
+</body>
+</html>
