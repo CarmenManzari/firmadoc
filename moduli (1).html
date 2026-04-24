@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestione Moduli — Gruppo tu.telati</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;background:#f0f0ec;color:#1a1a1a;min-height:100vh}
+.hdr{background:#1a1a1a;color:#fff;padding:0 20px;height:54px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200}
+.hdr-logo{font-size:15px;font-weight:700}.hdr-logo em{color:#e8a020;font-style:normal}
+.hdr-nav{display:flex;gap:6px}
+.nav-btn{background:none;border:1px solid #444;color:#fff;border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;font-family:Arial}
+.nav-btn.active{background:#e8a020;border-color:#e8a020}
+.wrap{max-width:820px;margin:0 auto;padding:20px 16px 48px}
+.page{display:none}.page.active{display:block}
+.page-title{font-size:20px;font-weight:700;margin-bottom:3px}
+.page-sub{font-size:12px;color:#666;margin-bottom:18px;line-height:1.5}
+.card{background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:16px;margin-bottom:12px}
+.card-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#666;margin-bottom:10px}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.field-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px}
+.field{display:flex;flex-direction:column;gap:3px}
+.field label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#999}
+.field input,.field select{font-size:13px;padding:8px 10px;border:1.5px solid #e0e0e0;border-radius:8px;font-family:Arial;background:#fff}
+.field input:focus,.field select:focus{outline:none;border-color:#1a1a1a}
+.field input.full{grid-column:1/-1}
+/* UPLOAD */
+.upload-zone{border:2px dashed #CECBF6;border-radius:10px;padding:22px;text-align:center;cursor:pointer;background:#EEEDFE;margin-bottom:10px}
+.upload-zone:hover{border-color:#26215C}
+/* PDF EDITOR */
+.pdf-editor{display:none;margin-top:10px}
+.pdf-toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#1a1a1a;border-radius:8px;margin-bottom:8px;flex-wrap:wrap}
+.pdf-toolbar-btn{background:none;border:1px solid #555;color:#fff;border-radius:6px;padding:5px 12px;font-size:11px;cursor:pointer;font-family:Arial}
+.pdf-toolbar-btn:disabled{opacity:.3;cursor:not-allowed}
+.pdf-toolbar-btn.active{background:#e8a020;border-color:#e8a020}
+.pdf-pg-lbl{font-size:12px;color:#fff;flex:1;text-align:center}
+.pdf-container{position:relative;border:2px solid #e0e0e0;border-radius:8px;overflow:hidden;background:#888;cursor:crosshair}
+.pdf-canvas{display:block;width:100%}
+.overlay-item{position:absolute;pointer-events:all;transform:translate(-50%,-50%);z-index:10}
+.overlay-firma{display:flex;align-items:center;gap:4px;background:rgba(232,160,32,.9);border:2px dashed #B8791A;border-radius:4px;padding:2px 8px;font-size:9px;font-weight:700;color:#fff;white-space:nowrap}
+.overlay-dato{display:flex;align-items:center;gap:4px;background:rgba(24,95,165,.9);border-radius:4px;padding:2px 8px;font-size:9px;font-weight:700;color:#fff;white-space:nowrap}
+.overlay-rm{cursor:pointer;margin-left:2px;opacity:.8;font-size:11px}
+.overlay-rm:hover{opacity:1}
+.istr{font-size:11px;padding:7px 10px;background:#EEEDFE;border-radius:6px;color:#26215C;font-weight:700;margin-bottom:8px}
+.elem-list{margin-top:8px;display:flex;flex-direction:column;gap:4px;max-height:160px;overflow-y:auto}
+.elem-row{display:flex;align-items:center;gap:8px;padding:6px 10px;background:#f9f9f9;border:1px solid #e0e0e0;border-radius:6px;font-size:12px}
+.badge{padding:2px 7px;border-radius:4px;font-size:9px;font-weight:700;color:#fff}
+.badge-f{background:#e8a020}.badge-d{background:#185FA5}
+/* POPUP */
+.popup-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:499}
+.popup{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:14px;padding:22px;box-shadow:0 8px 40px rgba(0,0,0,.25);z-index:500;width:340px;max-width:92vw}
+.popup h3{font-size:14px;font-weight:700;margin-bottom:14px}
+/* BOTTONI */
+.btn{padding:9px 18px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:Arial;border:none;transition:all .15s}
+.btn-primary{background:#1a1a1a;color:#fff}.btn-primary:hover{background:#333}
+.btn-primary:disabled{background:#ccc;cursor:not-allowed}
+.btn-secondary{background:#fff;color:#1a1a1a;border:1.5px solid #e0e0e0}.btn-secondary:hover{background:#f5f5f5}
+.btn-danger{background:#fff;color:#c0392b;border:1.5px solid #fcc}.btn-danger:hover{background:#fff0f0}
+.btn-green{background:#2d7a3a;color:#fff}.btn-green:hover{background:#256830}
+.btn-amber{background:#e8a020;color:#fff}.btn-amber:hover{background:#d4911a}
+.btn-row{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
+/* TEMPLATE GRID */
+.tpl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:12px}
+.tpl-card{padding:12px;border:2px solid #e0e0e0;border-radius:10px;cursor:pointer;background:#fff;transition:border-color .15s}
+.tpl-card:hover{border-color:#999}
+.tpl-card.sel{border-color:#1a1a1a;background:#f9f9f9}
+.tpl-list-item{display:flex;align-items:center;gap:12px;padding:11px 14px;background:#fff;border:1.5px solid #e0e0e0;border-radius:10px;margin-bottom:8px}
+/* PREVIEW */
+.preview-wrap{display:none;margin-top:12px;border:2px solid #1a1a1a;border-radius:10px;overflow:hidden}
+.preview-nav{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#1a1a1a}
+.preview-nav span{font-size:12px;color:#fff}
+.preview-canvas{display:block;width:100%}
+/* FIRME CHECK */
+.firma-chk{display:flex;align-items:center;gap:8px;padding:7px 10px;background:#fff;border:1.5px solid #e0e0e0;border-radius:7px;font-size:12px;cursor:pointer;margin-bottom:6px}
+/* LINK */
+.link-box{background:#EAF3DE;border:1.5px solid #C0DD97;border-radius:10px;padding:14px;margin-top:10px}
+.link-row{display:flex;gap:8px;align-items:center;margin-top:8px}
+.link-input{flex:1;font-size:11px;padding:7px 10px;border:1px solid #C0DD97;border-radius:7px;background:#fff;font-family:monospace}
+/* ARCHIVIO */
+.arch-card{display:flex;align-items:center;gap:12px;padding:11px 14px;background:#fff;border:1.5px solid #e0e0e0;border-radius:10px;margin-bottom:8px}
+.arch-info{flex:1}.arch-nome{font-size:13px;font-weight:700}.arch-meta{font-size:11px;color:#888;margin-top:1px}
+.pill{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700}
+.pill-f{background:#EAF3DE;color:#27500A}.pill-b{background:#FEF3E2;color:#B76A00}
+.empty{text-align:center;padding:2rem;color:#aaa;font-size:13px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(10px);background:#1a1a1a;color:#fff;padding:9px 18px;border-radius:20px;font-size:12px;opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;z-index:999;white-space:nowrap}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+@media(max-width:520px){.field-row,.field-row-3{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-logo">⚡ Gruppo <em>tu.telati</em> — Moduli</div>
+  <div class="hdr-nav">
+    <button class="nav-btn active" onclick="goPage('template',this)">📋 Template</button>
+    <button class="nav-btn" onclick="goPage('invia',this)">📤 Invia</button>
+    <button class="nav-btn" onclick="goPage('archivio',this)">🗂 Archivio</button>
+  </div>
+</div>
+
+<!-- ===== TEMPLATE ===== -->
+<div class="page active" id="page-template">
+<div class="wrap">
+  <div class="page-title">Gestione Template</div>
+  <div class="page-sub">Carica il PDF del modulo. Usa <strong>📝 Dato</strong> per segnare dove vanno i campi cliente e <strong>✍️ Firma</strong> per le firme.</div>
+
+  <div class="card">
+    <div class="card-title">➕ Nuovo template</div>
+    <div class="field-row">
+      <div class="field"><label>Nome modulo *</label><input type="text" id="tpl_nome" placeholder="Es. SEV – Disdetta Luce"></div>
+      <div class="field"><label>Categoria</label>
+        <select id="tpl_cat">
+          <option value="contratto">📃 Contratto</option>
+          <option value="disdetta">📄 Disdetta</option>
+          <option value="subentro">🔄 Subentro</option>
+          <option value="voltura">📋 Voltura</option>
+          <option value="dichiarazione">📝 Dichiarazione</option>
+          <option value="agevolazione">💰 Agevolazione</option>
+          <option value="altro">📁 Altro</option>
+        </select>
+      </div>
+    </div>
+    <div class="upload-zone" id="upload_zone" onclick="document.getElementById('pdf_input').click()" ondragover="event.preventDefault()" ondrop="onDrop(event)">
+      <div style="font-size:26px;margin-bottom:6px">📄</div>
+      <div style="font-weight:700;font-size:13px;color:#26215C">Clicca o trascina il PDF</div>
+      <div style="font-size:11px;color:#888;margin-top:3px">Solo .pdf</div>
+    </div>
+    <input type="file" id="pdf_input" accept=".pdf" style="display:none" onchange="onFileSelect(this)">
+
+    <div class="pdf-editor" id="pdf_editor">
+      <div class="pdf-toolbar">
+        <button class="pdf-toolbar-btn" id="ep_prev" onclick="epCambiaPg(-1)">← Prec.</button>
+        <span class="pdf-pg-lbl" id="ep_pg_lbl">Pag 1/1</span>
+        <button class="pdf-toolbar-btn" id="ep_next" onclick="epCambiaPg(1)">Succ. →</button>
+        <button class="pdf-toolbar-btn active" id="btn_mode_dato" onclick="setMode('dato')">📝 Dato</button>
+        <button class="pdf-toolbar-btn" id="btn_mode_firma" onclick="setMode('firma')">✍️ Firma</button>
+      </div>
+      <div class="istr" id="ep_istr">📝 Modalità DATO — clicca sul PDF dove va un dato del cliente</div>
+      <div class="pdf-container" id="ep_container"><canvas class="pdf-canvas" id="ep_canvas"></canvas></div>
+      <div class="elem-list" id="ep_elem_list"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="resetEditor()">Annulla</button>
+      <button class="btn btn-primary" id="btn_salva_tpl" onclick="salvaTemplate()">💾 Salva template</button>
+    </div>
+  </div>
+
+  <div class="card-title" style="margin-bottom:8px">📚 Template salvati</div>
+  <div id="tpl_saved_list"><div class="empty">Nessun template — creane uno sopra</div></div>
+</div>
+</div>
+
+<!-- ===== INVIA ===== -->
+<div class="page" id="page-invia">
+<div class="wrap">
+  <div class="page-title">Prepara e invia</div>
+  <div class="page-sub">Scegli il template, inserisci i dati del cliente, controlla l'anteprima e manda il link WhatsApp.</div>
+
+  <!-- Step 1: Scegli template -->
+  <div class="card">
+    <div class="card-title">1️⃣ Scegli template</div>
+    <div class="tpl-grid" id="tpl_grid_invia"><div class="empty" style="grid-column:1/-1">Nessun template — creane uno</div></div>
+  </div>
+
+  <!-- Step 2: Dati cliente -->
+  <div class="card" id="card_dati" style="display:none">
+    <div class="card-title">2️⃣ Dati cliente</div>
+    <div style="font-size:12px;color:#666;margin-bottom:10px">Inserisci i dati da precompilare nel modulo. Lascia vuoti i campi non necessari.</div>
+
+    <div class="field-row">
+      <div class="field"><label>Nome e Cognome</label><input type="text" id="d_nome" placeholder="Es. Mario Rossi"></div>
+      <div class="field"><label>Codice Fiscale</label><input type="text" id="d_cf" placeholder="Es. RSSMRA75C15A662Z"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Luogo di nascita</label><input type="text" id="d_luogo_nascita" placeholder="Es. Bari"></div>
+      <div class="field"><label>Data di nascita</label><input type="text" id="d_data_nascita" placeholder="Es. 15/03/1975"></div>
+    </div>
+    <div class="field" style="margin-bottom:10px">
+      <label>Indirizzo residenza completo</label>
+      <input type="text" id="d_residenza" placeholder="Es. Via Roma 12, 70100 Bari (BA)">
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Telefono</label><input type="text" id="d_tel" placeholder="Es. 3331234567"></div>
+      <div class="field"><label>Email</label><input type="text" id="d_email" placeholder="Es. mario@email.it"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Partita IVA</label><input type="text" id="d_piva" placeholder="Solo se azienda"></div>
+      <div class="field"><label>IBAN</label><input type="text" id="d_iban" placeholder="Es. IT60X0542811101000000123456"></div>
+    </div>
+    <div style="height:1px;background:#f0f0f0;margin:10px 0"></div>
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#999;margin-bottom:8px">Documento identità</div>
+    <div class="field-row-3">
+      <div class="field"><label>Tipo documento</label>
+        <select id="d_doc_tipo"><option value="">—</option><option>Carta d'identità</option><option>Passaporto</option><option>Patente</option></select>
+      </div>
+      <div class="field"><label>Numero</label><input type="text" id="d_doc_num" placeholder="Es. AX1234567"></div>
+      <div class="field"><label>Rilasciato il</label><input type="text" id="d_doc_data" placeholder="Es. 10/01/2020"></div>
+    </div>
+    <div style="height:1px;background:#f0f0f0;margin:10px 0"></div>
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:#999;margin-bottom:8px">Fornitura</div>
+    <div class="field-row">
+      <div class="field"><label>Codice POD</label><input type="text" id="d_pod" placeholder="Es. IT001E12345678"></div>
+      <div class="field"><label>Codice PDR</label><input type="text" id="d_pdr" placeholder="Es. 00123456789"></div>
+    </div>
+    <div class="field" style="margin-bottom:10px">
+      <label>Indirizzo fornitura</label>
+      <input type="text" id="d_ind_fornitura" placeholder="Es. Via Roma 12, 70100 Bari">
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Fornitore attuale</label><input type="text" id="d_fornitore" placeholder="Es. Enel Energia"></div>
+      <div class="field"><label>Luogo firma (per data)</label><input type="text" id="d_luogo_firma" placeholder="Es. Bari"></div>
+    </div>
+  </div>
+
+  <!-- Step 3: Firme -->
+  <div class="card" id="card_firme_invia" style="display:none">
+    <div class="card-title">3️⃣ Firme richieste</div>
+    <div style="font-size:12px;color:#666;margin-bottom:8px">Deseleziona le firme non necessarie per questo cliente:</div>
+    <div id="firme_check_invia"></div>
+  </div>
+
+  <!-- Step 4: Anteprima -->
+  <div class="card" id="card_anteprima" style="display:none">
+    <div class="card-title">4️⃣ Anteprima</div>
+    <div style="font-size:12px;color:#666;margin-bottom:10px">Verifica il documento precompilato prima di inviare.</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+      <button class="btn btn-secondary" style="padding:6px 12px" id="ant_prev" onclick="antCambiaPg(-1)">←</button>
+      <span style="flex:1;text-align:center;font-size:12px;color:#555" id="ant_pg_lbl">Pagina 1</span>
+      <button class="btn btn-secondary" style="padding:6px 12px" id="ant_next" onclick="antCambiaPg(1)">→</button>
+    </div>
+    <div style="border:2px solid #1a1a1a;border-radius:8px;overflow:hidden">
+      <canvas id="ant_canvas" style="display:block;width:100%"></canvas>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="salvaBozza()">💾 Salva bozza</button>
+      <button class="btn btn-amber" onclick="generaLink()">🔗 Genera link</button>
+    </div>
+    <div class="link-box" id="link_box" style="display:none">
+      <div style="font-size:11px;font-weight:700;color:#27500A;margin-bottom:6px">✓ Link pronto — invia al cliente</div>
+      <div class="link-row">
+        <input type="text" class="link-input" id="link_url" readonly>
+        <button class="btn btn-secondary" style="padding:6px 10px;font-size:11px" onclick="copiaLink()">📋</button>
+      </div>
+      <button class="btn btn-green" style="width:100%;margin-top:10px;padding:11px" onclick="inviaWA()">💬 Invia su WhatsApp</button>
+    </div>
+  </div>
+
+  <div id="btn_genera_ant_wrap" style="display:none">
+    <button class="btn btn-primary" style="width:100%;padding:12px" onclick="generaAnteprima()">👁 Genera anteprima</button>
+  </div>
+</div>
+</div>
+
+<!-- ===== ARCHIVIO ===== -->
+<div class="page" id="page-archivio">
+<div class="wrap">
+  <div class="page-title">Archivio</div>
+  <div class="page-sub">Bozze salvate e documenti firmati.</div>
+  <div style="display:flex;gap:8px;margin-bottom:14px">
+    <button class="btn btn-primary" id="tab_b" onclick="showTab('b')">💾 Bozze</button>
+    <button class="btn btn-secondary" id="tab_f" onclick="showTab('f')">✅ Firmati</button>
+  </div>
+  <div id="arch_bozze"><div class="empty">Nessuna bozza</div></div>
+  <div id="arch_firmati" style="display:none"><div class="empty">Nessun documento firmato</div></div>
+</div>
+</div>
+
+<!-- POPUP DATO -->
+<div class="popup-bg" id="popup_bg" onclick="chiudiPopup()"></div>
+<div class="popup" id="popup">
+  <h3>📝 Quale dato inserire qui?</h3>
+  <div class="field" style="margin-bottom:10px">
+    <label>Campo</label>
+    <select id="popup_campo" style="font-size:13px;padding:8px 10px;border:1.5px solid #e0e0e0;border-radius:8px;font-family:Arial">
+      <optgroup label="Anagrafica">
+        <option value="nome">Nome e Cognome</option>
+        <option value="cf">Codice Fiscale</option>
+        <option value="data_nascita">Data di nascita</option>
+        <option value="luogo_nascita">Luogo di nascita</option>
+        <option value="residenza">Residenza completa</option>
+        <option value="tel">Telefono</option>
+        <option value="email">Email</option>
+        <option value="piva">Partita IVA</option>
+        <option value="iban">IBAN</option>
+      </optgroup>
+      <optgroup label="Documento">
+        <option value="doc_tipo">Tipo documento</option>
+        <option value="doc_num">Numero documento</option>
+        <option value="doc_data">Data rilascio</option>
+      </optgroup>
+      <optgroup label="Fornitura">
+        <option value="pod">Codice POD</option>
+        <option value="pdr">Codice PDR</option>
+        <option value="ind_fornitura">Indirizzo fornitura</option>
+        <option value="fornitore">Fornitore attuale</option>
+      </optgroup>
+      <optgroup label="Altro">
+        <option value="data_oggi">Data odierna</option>
+        <option value="luogo_data">Luogo e data</option>
+      </optgroup>
+    </select>
+  </div>
+  <div class="field" style="margin-bottom:4px">
+    <label>Dimensione testo</label>
+    <select id="popup_size" style="font-size:13px;padding:8px 10px;border:1.5px solid #e0e0e0;border-radius:8px;font-family:Arial">
+      <option value="7">Piccolo (7pt) — CF, date, codici</option>
+      <option value="8" selected>Normale (8pt) — nomi, indirizzi brevi</option>
+      <option value="9">Medio (9pt) — indirizzi lunghi</option>
+      <option value="10">Grande (10pt)</option>
+    </select>
+  </div>
+  <div class="btn-row" style="margin-top:14px">
+    <button class="btn btn-secondary" onclick="chiudiPopup()">Annulla</button>
+    <button class="btn btn-primary" onclick="confermaDato()">Aggiungi</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== FIREBASE =====
+firebase.initializeApp({
+  apiKey:"AIzaSyCVqrDWJDLtyGUzPBtvkHOMxBERO4ixKX0",
+  authDomain:"crm-servizi.firebaseapp.com",
+  projectId:"crm-servizi",
+  storageBucket:"crm-servizi.firebasestorage.app",
+  messagingSenderId:"611069430965",
+  appId:"1:611069430965:web:6b1f36552c007c438942fc"
+});
+var db = firebase.firestore();
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ===== NOMI CAMPI =====
+var NOMI = {nome:'Nome Cognome',cf:'Cod. Fiscale',data_nascita:'Data nascita',luogo_nascita:'Luogo nascita',residenza:'Residenza',tel:'Telefono',email:'Email',piva:'P.IVA',iban:'IBAN',doc_tipo:'Tipo doc.',doc_num:'N° doc.',doc_data:'Data doc.',pod:'POD',pdr:'PDR',ind_fornitura:'Ind. fornitura',fornitore:'Fornitore',data_oggi:'Data oggi',luogo_data:'Luogo e data'};
+
+// ===== STATE =====
+var templates=[], pdfDocEd=null, pdfDataEd=null, edPg=1, edTotPg=1, edMode='dato', pendPos=null, elementi=[];
+var tplSel=null, antPdfDoc=null, antPg=1, antTotPg=1, antOverlays=[];
+
+// ===== INIT =====
+loadTemplates(); loadArchivio();
+
+function loadTemplates(){
+  db.collection('mod_templates').get().then(function(s){
+    templates=[];
+    s.forEach(function(d){templates.push(Object.assign({id:d.id},d.data()));});
+    renderTplSavedList(); renderTplGridInvia();
+  });
+}
+
+function loadArchivio(){
+  db.collection('mod_bozze').orderBy('timestamp','desc').get().then(function(s){
+    var items=[]; s.forEach(function(d){items.push(Object.assign({id:d.id},d.data()));});
+    renderBozze(items);
+  }).catch(function(){});
+  db.collection('mod_firmati').orderBy('timestamp','desc').get().then(function(s){
+    var items=[]; s.forEach(function(d){items.push(Object.assign({id:d.id},d.data()));});
+    renderFirmati(items);
+  }).catch(function(){});
+}
+
+// ===== NAV =====
+function goPage(name,btn){
+  document.querySelectorAll('.page').forEach(function(p){p.classList.remove('active');});
+  document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.remove('active');});
+  document.getElementById('page-'+name).classList.add('active');
+  if(btn)btn.classList.add('active');
+  if(name==='invia')loadTemplates();
+  if(name==='archivio')loadArchivio();
+}
+function showTab(t){
+  document.getElementById('arch_bozze').style.display=t==='b'?'block':'none';
+  document.getElementById('arch_firmati').style.display=t==='f'?'block':'none';
+  document.getElementById('tab_b').className='btn '+(t==='b'?'btn-primary':'btn-secondary');
+  document.getElementById('tab_f').className='btn '+(t==='f'?'btn-primary':'btn-secondary');
+}
+
+// ===== UPLOAD =====
+function onDrop(e){e.preventDefault();var f=e.dataTransfer.files[0];if(f&&f.type==='application/pdf')caricaPdf(f);else showToast('Solo PDF');}
+function onFileSelect(i){if(i.files[0])caricaPdf(i.files[0]);}
+function caricaPdf(file){
+  var r=new FileReader();
+  r.onload=function(e){
+    pdfDataEd=e.target.result; elementi=[]; pendPos=null;
+    document.getElementById('upload_zone').style.display='none';
+    document.getElementById('pdf_editor').style.display='block';
+    renderElemList();
+    var b64=pdfDataEd.split(',')[1],bin=atob(b64),bytes=new Uint8Array(bin.length);
+    for(var i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+    pdfjsLib.getDocument({data:bytes}).promise.then(function(pdf){
+      pdfDocEd=pdf; edTotPg=pdf.numPages; edPg=1; renderEdPage(1);
+    });
+    showToast('PDF caricato — clicca per aggiungere elementi');
+  };
+  r.readAsDataURL(file);
+}
+
+function renderEdPage(n){
+  edPg=n;
+  document.getElementById('ep_pg_lbl').textContent='Pag '+n+'/'+edTotPg;
+  document.getElementById('ep_prev').disabled=n<=1;
+  document.getElementById('ep_next').disabled=n>=edTotPg;
+  pdfDocEd.getPage(n).then(function(page){
+    var con=document.getElementById('ep_container'),cv=document.getElementById('ep_canvas');
+    var w=con.offsetWidth||700,vp=page.getViewport({scale:1}),sc=w/vp.width,sv=page.getViewport({scale:sc});
+    cv.width=sv.width; cv.height=sv.height;
+    page.render({canvasContext:cv.getContext('2d'),viewport:sv}).promise.then(function(){
+      renderEdOverlays();
+      con.onclick=function(e){
+        if(e.target.closest('[data-rm]'))return;
+        var rect=con.getBoundingClientRect();
+        pendPos={xPct:(e.clientX-rect.left)/rect.width,yPct:(e.clientY-rect.top)/rect.height,pagina:edPg};
+        if(edMode==='firma'){
+          elementi.push({tipo:'firma',nome:'Firma',pagina:edPg,xPct:pendPos.xPct,yPct:pendPos.yPct,size:0});
+          pendPos=null; renderEdOverlays(); renderElemList(); showToast('Firma aggiunta ✓');
+        } else { apriPopup(); }
+      };
+    });
+  });
+}
+function epCambiaPg(d){var n=edPg+d;if(n>=1&&n<=edTotPg)renderEdPage(n);}
+function setMode(m){
+  edMode=m;
+  document.getElementById('btn_mode_dato').className='pdf-toolbar-btn'+(m==='dato'?' active':'');
+  document.getElementById('btn_mode_firma').className='pdf-toolbar-btn'+(m==='firma'?' active':'');
+  document.getElementById('ep_istr').textContent=m==='dato'?'📝 Modalità DATO — clicca dove va un dato del cliente':'✍️ Modalità FIRMA — clicca dove va la firma del cliente';
+}
+
+function renderEdOverlays(){
+  var con=document.getElementById('ep_container');
+  con.querySelectorAll('.overlay-item').forEach(function(el){el.remove();});
+  elementi.forEach(function(el,i){
+    if(el.pagina!==edPg)return;
+    var div=document.createElement('div');
+    div.className='overlay-item';
+    div.style.left=(el.xPct*100)+'%'; div.style.top=(el.yPct*100)+'%';
+    if(el.tipo==='firma'){
+      div.innerHTML='<div class="overlay-firma">✍️ Firma<span class="overlay-rm" data-rm="1" onclick="rimuoviElem('+i+')">×</span></div>';
+    } else {
+      div.innerHTML='<div class="overlay-dato">'+(NOMI[el.campo]||el.campo)+'<span class="overlay-rm" data-rm="1" onclick="rimuoviElem('+i+')">×</span></div>';
+    }
+    con.appendChild(div);
+  });
+}
+function rimuoviElem(i){elementi.splice(i,1);renderEdOverlays();renderElemList();}
+function renderElemList(){
+  var el=document.getElementById('ep_elem_list');
+  if(!elementi.length){el.innerHTML='';return;}
+  el.innerHTML='<div style="font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.4px;margin:8px 0 5px">Elementi ('+elementi.length+')</div>'+
+    elementi.map(function(e,i){
+      return '<div class="elem-row"><span class="badge '+(e.tipo==='firma'?'badge-f':'badge-d')+'">'+(e.tipo==='firma'?'FIRMA':'DATO')+'</span>'+
+        '<span style="flex:1">'+(e.tipo==='firma'?'Firma':NOMI[e.campo]||e.campo)+'</span>'+
+        '<span style="color:#aaa;font-size:10px">pag.'+e.pagina+'</span>'+
+        '<button onclick="rimuoviElem('+i+')" style="background:none;border:none;color:#ccc;cursor:pointer;font-size:14px;padding:0 4px">×</button></div>';
+    }).join('');
+}
+
+// ===== POPUP =====
+function apriPopup(){document.getElementById('popup_bg').style.display='block';document.getElementById('popup').style.display='block';}
+function chiudiPopup(){document.getElementById('popup_bg').style.display='none';document.getElementById('popup').style.display='none';pendPos=null;}
+function confermaDato(){
+  if(!pendPos){chiudiPopup();return;}
+  var campo=document.getElementById('popup_campo').value;
+  var size=parseInt(document.getElementById('popup_size').value);
+  elementi.push({tipo:'dato',campo:campo,nome:NOMI[campo]||campo,pagina:pendPos.pagina,xPct:pendPos.xPct,yPct:pendPos.yPct,size:size});
+  pendPos=null; chiudiPopup(); renderEdOverlays(); renderElemList();
+  showToast((NOMI[campo]||campo)+' aggiunto ✓');
+}
+
+// ===== SALVA TEMPLATE =====
+function salvaTemplate(){
+  var nome=(document.getElementById('tpl_nome').value||'').trim();
+  var cat=document.getElementById('tpl_cat').value;
+  if(!nome){showToast('Inserisci il nome');return;}
+  if(!pdfDataEd){showToast('Carica un PDF');return;}
+  if(!elementi.length){showToast('Aggiungi almeno un elemento');return;}
+  var btn=document.getElementById('btn_salva_tpl');
+  btn.disabled=true;btn.textContent='⏳...';
+  db.collection('mod_templates').add({nome:nome,categoria:cat,pdfData:pdfDataEd,elementi:elementi,data:new Date().toLocaleDateString('it-IT')})
+  .then(function(ref){
+    templates.push({id:ref.id,nome:nome,categoria:cat,pdfData:pdfDataEd,elementi:elementi});
+    renderTplSavedList();renderTplGridInvia();resetEditor();
+    showToast('Template salvato ✓');btn.disabled=false;btn.textContent='💾 Salva template';
+  }).catch(function(e){showToast('Errore: '+e.message);btn.disabled=false;btn.textContent='💾 Salva template';});
+}
+function resetEditor(){
+  pdfDataEd=null;pdfDocEd=null;elementi=[];pendPos=null;
+  document.getElementById('upload_zone').style.display='block';
+  document.getElementById('pdf_editor').style.display='none';
+  document.getElementById('tpl_nome').value='';
+  document.getElementById('ep_elem_list').innerHTML='';
+  document.getElementById('pdf_input').value='';
+}
+function eliminaTemplate(id){
+  if(!confirm('Eliminare?'))return;
+  db.collection('mod_templates').doc(id).delete().then(function(){
+    templates=templates.filter(function(t){return t.id!==id;});
+    renderTplSavedList();renderTplGridInvia();showToast('Eliminato');
+  });
+}
+
+var CI={contratto:'📃',disdetta:'📄',subentro:'🔄',voltura:'📋',dichiarazione:'📝',agevolazione:'💰',altro:'📁'};
+
+function renderTplSavedList(){
+  var el=document.getElementById('tpl_saved_list');
+  if(!templates.length){el.innerHTML='<div class="empty">Nessun template</div>';return;}
+  el.innerHTML=templates.map(function(t){
+    var nf=(t.elementi||[]).filter(function(e){return e.tipo==='firma';}).length;
+    var nd=(t.elementi||[]).filter(function(e){return e.tipo==='dato';}).length;
+    return '<div class="tpl-list-item">'+
+      '<div style="font-size:22px">'+(CI[t.categoria]||'📁')+'</div>'+
+      '<div style="flex:1"><div style="font-size:13px;font-weight:700">'+t.nome+'</div>'+
+      '<div style="font-size:11px;color:#888">'+nd+' dati · '+nf+' firma'+(nf!==1?'e':'')+' · '+(t.data||'')+'</div></div>'+
+      '<button class="btn btn-danger" style="padding:5px 10px;font-size:11px" onclick="eliminaTemplate(\''+t.id+'\')">✕</button>'+
+    '</div>';
+  }).join('');
+}
+
+// ===== INVIA =====
+function renderTplGridInvia(){
+  var el=document.getElementById('tpl_grid_invia');
+  if(!templates.length){el.innerHTML='<div class="empty" style="grid-column:1/-1">Nessun template disponibile</div>';return;}
+  el.innerHTML=templates.map(function(t){
+    var nf=(t.elementi||[]).filter(function(e){return e.tipo==='firma';}).length;
+    return '<div class="tpl-card" id="tc_'+t.id+'" onclick="selTpl(\''+t.id+'\')">'+
+      '<div style="font-size:22px;margin-bottom:5px">'+(CI[t.categoria]||'📁')+'</div>'+
+      '<div style="font-size:12px;font-weight:700;line-height:1.3">'+t.nome+'</div>'+
+      '<div style="font-size:10px;color:#888;margin-top:3px">'+nf+' firma'+(nf!==1?'e':'')+'</div></div>';
+  }).join('');
+}
+
+function selTpl(id){
+  tplSel=templates.find(function(t){return t.id===id;});
+  templates.forEach(function(t){var c=document.getElementById('tc_'+t.id);if(c)c.className='tpl-card'+(t.id===id?' sel':'');});
+  if(!tplSel)return;
+  // Mostra dati cliente
+  document.getElementById('card_dati').style.display='block';
+  // Firme
+  var firme=(tplSel.elementi||[]).filter(function(e){return e.tipo==='firma';});
+  var cf=document.getElementById('card_firme_invia');
+  if(firme.length){
+    cf.style.display='block';
+    document.getElementById('firme_check_invia').innerHTML=firme.map(function(f,i){
+      return '<label class="firma-chk"><input type="checkbox" id="fci_'+i+'" checked>'+
+        '<span style="font-weight:600;flex:1">Firma '+(i+1)+'</span>'+
+        '<span style="color:#aaa;font-size:10px">pag. '+f.pagina+'</span></label>';
+    }).join('');
+  } else { cf.style.display='none'; }
+  document.getElementById('btn_genera_ant_wrap').style.display='block';
+  document.getElementById('card_anteprima').style.display='none';
+  document.getElementById('link_box').style.display='none';
+  showToast('Template selezionato ✓');
+}
+
+// ===== DATI CLIENTE =====
+function getDati(){
+  var oggi=new Date().toLocaleDateString('it-IT');
+  var luogo=document.getElementById('d_luogo_firma').value||'';
+  return {
+    nome:document.getElementById('d_nome').value,
+    cf:document.getElementById('d_cf').value,
+    data_nascita:document.getElementById('d_data_nascita').value,
+    luogo_nascita:document.getElementById('d_luogo_nascita').value,
+    residenza:document.getElementById('d_residenza').value,
+    tel:document.getElementById('d_tel').value,
+    email:document.getElementById('d_email').value,
+    piva:document.getElementById('d_piva').value,
+    iban:document.getElementById('d_iban').value,
+    doc_tipo:document.getElementById('d_doc_tipo').value,
+    doc_num:document.getElementById('d_doc_num').value,
+    doc_data:document.getElementById('d_doc_data').value,
+    pod:document.getElementById('d_pod').value,
+    pdr:document.getElementById('d_pdr').value,
+    ind_fornitura:document.getElementById('d_ind_fornitura').value,
+    fornitore:document.getElementById('d_fornitore').value,
+    data_oggi:oggi,
+    luogo_data:(luogo||'Bari')+', '+oggi
+  };
+}
+
+function getValore(dati, campo){ return dati[campo]||''; }
+
+// ===== ANTEPRIMA =====
+async function generaAnteprima(){
+  if(!tplSel){showToast('Seleziona un template');return;}
+  document.getElementById('card_anteprima').style.display='block';
+  document.getElementById('link_box').style.display='none';
+  antOverlays=(tplSel.elementi||[]).filter(function(e){return e.tipo==='dato';}).map(function(e){
+    return {pagina:e.pagina,xPct:e.xPct,yPct:e.yPct,testo:getValore(getDati(),e.campo),size:e.size||8};
+  });
+  var b64=tplSel.pdfData.split(',')[1],bin=atob(b64),bytes=new Uint8Array(bin.length);
+  for(var i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+  antPdfDoc=await pdfjsLib.getDocument({data:bytes}).promise;
+  antTotPg=antPdfDoc.numPages; antPg=1;
+  renderAntPg(1);
+  document.getElementById('card_anteprima').scrollIntoView({behavior:'smooth'});
+}
+
+async function renderAntPg(n){
+  antPg=n;
+  document.getElementById('ant_pg_lbl').textContent='Pagina '+n+' / '+antTotPg;
+  document.getElementById('ant_prev').disabled=n<=1;
+  document.getElementById('ant_next').disabled=n>=antTotPg;
+  var page=await antPdfDoc.getPage(n);
+  var cv=document.getElementById('ant_canvas');
+  var w=cv.parentElement.offsetWidth||700;
+  var vp=page.getViewport({scale:1}),sc=w/vp.width,sv=page.getViewport({scale:sc});
+  cv.width=sv.width; cv.height=sv.height;
+  var ctx=cv.getContext('2d');
+  await page.render({canvasContext:ctx,viewport:sv}).promise;
+  // Disegna dati
+  antOverlays.filter(function(o){return o.pagina===n;}).forEach(function(o){
+    if(!o.testo)return;
+    var x=o.xPct*cv.width, y=o.yPct*cv.height;
+    var ptPx=sc*1.33;
+    ctx.font='bold '+Math.round(o.size*ptPx)+'px Arial';
+    ctx.fillStyle='#185FA5';
+    ctx.fillText(o.testo,x,y);
+  });
+}
+function antCambiaPg(d){var n=antPg+d;if(n>=1&&n<=antTotPg)renderAntPg(n);}
+
+// ===== SALVA BOZZA =====
+function salvaBozza(){
+  if(!tplSel){showToast('Seleziona un template');return;}
+  var dati=getDati();
+  var firme=(tplSel.elementi||[]).filter(function(e){return e.tipo==='firma';});
+  var firmeIdx=firme.map(function(f,i){var c=document.getElementById('fci_'+i);return c&&c.checked?i:-1;}).filter(function(x){return x>=0;});
+  db.collection('mod_bozze').add({
+    nomeCliente:dati.nome||'(senza nome)',
+    nomeModulo:tplSel.nome,
+    templateId:tplSel.id,
+    datiCliente:dati,
+    firmeIdx:firmeIdx,
+    data:new Date().toLocaleDateString('it-IT'),
+    timestamp:new Date().toISOString()
+  }).then(function(){showToast('Bozza salvata ✓');loadArchivio();})
+  .catch(function(e){showToast('Errore: '+e.message);});
+}
+
+// ===== GENERA LINK =====
+function generaLink(){
+  if(!tplSel){showToast('Seleziona un template');return;}
+  var dati=getDati();
+  var firme=(tplSel.elementi||[]).filter(function(e){return e.tipo==='firma';});
+  var firmeIdx=firme.map(function(f,i){var c=document.getElementById('fci_'+i);return c&&c.checked?i:-1;}).filter(function(x){return x>=0;});
+  // Salva dati su Firestore e genera link con docId
+  db.collection('mod_invii').add({
+    templateId:tplSel.id,
+    datiCliente:dati,
+    firmeIdx:firmeIdx,
+    nomeCliente:dati.nome||'',
+    nomeModulo:tplSel.nome,
+    data:new Date().toLocaleDateString('it-IT'),
+    timestamp:new Date().toISOString()
+  }).then(function(ref){
+    var url='https://firmadoc.carmenmanzari022.workers.dev/firma2.html?did='+ref.id;
+    document.getElementById('link_url').value=url;
+    document.getElementById('link_box').style.display='block';
+    showToast('Link generato ✓');
+  }).catch(function(e){showToast('Errore: '+e.message);});
+}
+
+function copiaLink(){
+  navigator.clipboard.writeText(document.getElementById('link_url').value)
+    .then(function(){showToast('Copiato ✓');})
+    .catch(function(){document.getElementById('link_url').select();document.execCommand('copy');showToast('Copiato ✓');});
+}
+
+function inviaWA(){
+  if(!tplSel)return;
+  var dati=getDati();
+  var url=document.getElementById('link_url').value;
+  var testo='Gentile '+(dati.nome||'Cliente')+',\n\nle inviamo il documento *'+tplSel.nome+'* già compilato con i suoi dati.\n\nApra il link per verificare e firmare:\n\n'+url+'\n\nGruppo tu.telati';
+  var tel=(dati.tel||'').replace(/\s/g,'').replace(/[^+\d]/g,'');
+  window.open(tel.length>5?'https://wa.me/'+tel+'?text='+encodeURIComponent(testo):'https://wa.me/?text='+encodeURIComponent(testo),'_blank');
+}
+
+// ===== ARCHIVIO =====
+function renderBozze(items){
+  var el=document.getElementById('arch_bozze');
+  if(!items.length){el.innerHTML='<div class="empty">Nessuna bozza</div>';return;}
+  el.innerHTML=items.map(function(m){
+    return '<div class="arch-card"><div style="font-size:22px">💾</div>'+
+      '<div class="arch-info"><div class="arch-nome">'+m.nomeModulo+'</div>'+
+      '<div class="arch-meta">'+m.nomeCliente+' · '+m.data+' <span class="pill pill-b">BOZZA</span></div></div>'+
+      '<div style="display:flex;gap:6px">'+
+      '<button class="btn btn-amber" style="padding:5px 10px;font-size:11px" onclick="riprendiBozza(\''+m.id+'\')">Riprendi</button>'+
+      '<button class="btn btn-danger" style="padding:5px 10px;font-size:11px" onclick="eliminaBozza(\''+m.id+'\')">✕</button>'+
+      '</div></div>';
+  }).join('');
+}
+
+function renderFirmati(items){
+  var el=document.getElementById('arch_firmati');
+  if(!items.length){el.innerHTML='<div class="empty">Nessun documento firmato</div>';return;}
+  el.innerHTML=items.map(function(m){
+    return '<div class="arch-card"><div style="font-size:22px">✅</div>'+
+      '<div class="arch-info"><div class="arch-nome">'+m.nomeModulo+'</div>'+
+      '<div class="arch-meta">'+m.nomeCliente+' · '+m.data+' <span class="pill pill-f">FIRMATO</span></div></div>'+
+      '<button class="btn btn-primary" style="padding:5px 10px;font-size:11px" onclick="scaricaFirmato(\''+m.id+'\')">⬇ PDF</button>'+
+      '</div>';
+  }).join('');
+}
+
+function eliminaBozza(id){
+  if(!confirm('Eliminare?'))return;
+  db.collection('mod_bozze').doc(id).delete().then(function(){loadArchivio();showToast('Eliminata');});
+}
+
+function riprendiBozza(id){
+  db.collection('mod_bozze').doc(id).get().then(function(doc){
+    if(!doc.exists)return;
+    var b=doc.data();
+    var t=templates.find(function(t){return t.id===b.templateId;});
+    if(t){
+      goPage('invia',document.querySelectorAll('.nav-btn')[1]);
+      setTimeout(function(){
+        selTpl(t.id);
+        var d=b.datiCliente||{};
+        var campi=['nome','cf','data_nascita','luogo_nascita','residenza','tel','email','piva','iban','doc_tipo','doc_num','doc_data','pod','pdr','ind_fornitura','fornitore'];
+        campi.forEach(function(k){var el=document.getElementById('d_'+k);if(el&&d[k])el.value=d[k];});
+        showToast('Bozza ripresa ✓');
+      },300);
+    }
+  });
+}
+
+async function scaricaFirmato(docId){
+  showToast('Preparazione PDF...');
+  var doc=await db.collection('mod_firmati').doc(docId).get();
+  if(!doc.exists){showToast('Non trovato');return;}
+  var m=doc.data();
+  var invioDoc=await db.collection('mod_invii').doc(m.invioId||'').get().catch(function(){return {exists:false};});
+  var tplDoc=await db.collection('mod_templates').doc(m.templateId).get();
+  if(!tplDoc.exists){showToast('Template non trovato');return;}
+  var tpl=tplDoc.data();
+  var dati=invioDoc.exists?invioDoc.data().datiCliente||{}:{};
+  await ricostruisciPdf(m,tpl,dati);
+}
+
+async function ricostruisciPdf(m,tpl,dati){
+  try{
+    var jsPDF=window.jspdf.jsPDF,W=210,H=297;
+    var b64=tpl.pdfData.split(',')[1],bin=atob(b64),bytes=new Uint8Array(bin.length);
+    for(var i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+    var pdfSrc=await pdfjsLib.getDocument({data:bytes}).promise;
+    var doc=new jsPDF({orientation:'p',unit:'mm',format:'a4'});
+    for(var pg=1;pg<=pdfSrc.numPages;pg++){
+      if(pg>1)doc.addPage();
+      var page=await pdfSrc.getPage(pg);
+      var vp=page.getViewport({scale:1.5}),offC=document.createElement('canvas');
+      offC.width=vp.width;offC.height=vp.height;
+      await page.render({canvasContext:offC.getContext('2d'),viewport:vp}).promise;
+      doc.addImage(offC.toDataURL('image/jpeg',0.6),'JPEG',0,0,W,H);
+      // Dati
+      (tpl.elementi||[]).filter(function(e){return e.tipo==='dato'&&e.pagina===pg;}).forEach(function(e){
+        var v=dati[e.campo]||'';if(!v)return;
+        doc.setFontSize(e.size||8);doc.setFont('helvetica','bold');doc.setTextColor(24,95,165);
+        doc.text(v,e.xPct*W,e.yPct*H);doc.setTextColor(0);
+      });
+      // Firme
+      (m.firmeData||[]).filter(function(f){return f.pagina===pg&&f.dataUrl;}).forEach(function(f){
+        if(!f.pos)return;
+        var fw=52,fh=18,fx=Math.max(5,Math.min(W-fw-5,f.pos.xPct*W-fw/2)),fy=Math.max(5,Math.min(H-fh-5,f.pos.yPct*H-fh));
+        doc.addImage(f.dataUrl,'PNG',fx,fy,fw,fh);
+        doc.setDrawColor(160);doc.setLineWidth(0.25);doc.line(fx,fy+fh+0.5,fx+fw,fy+fh+0.5);
+        doc.setFontSize(7);doc.setFont('helvetica','normal');doc.setTextColor(80);
+        doc.text((m.luogo||'')+', '+(m.data||''),fx,fy-1.5);doc.setTextColor(0);
+      });
+    }
+    doc.save((m.nomeModulo||'modulo').replace(/\s+/g,'-')+'_'+(m.nomeCliente||'').replace(/\s+/g,'-')+'_firmato.pdf');
+    showToast('PDF scaricato ✓');
+  }catch(e){showToast('Errore PDF: '+e.message);}
+}
+
+function showToast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2500);}
+</script>
+</body>
+</html>
