@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Test</title>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+</head><body>
+<div id="out" style="font-family:Arial;padding:20px;font-size:14px">Caricamento...</div>
+<script>
+firebase.initializeApp({
+  apiKey:"AIzaSyCVqrDWJDLtyGUzPBtvkHOMxBERO4ixKX0",
+  authDomain:"crm-servizi.firebaseapp.com",
+  projectId:"crm-servizi",
+  storageBucket:"crm-servizi.firebasestorage.app",
+  messagingSenderId:"611069430965",
+  appId:"1:611069430965:web:6b1f36552c007c438942fc"
+});
+var db = firebase.firestore();
+var did = 'AwAh6yCQR45XxM49EhfG';
+db.collection('mod_invii').doc(did).get().then(function(doc) {
+  if(doc.exists) {
+    var d = doc.data();
+    document.getElementById('out').innerHTML = '<b style="color:green">✓ TROVATO</b><br>nomeModulo: '+d.nomeModulo+'<br>templateId: '+d.templateId+'<br>nomeCliente: '+d.nomeCliente;
+  } else {
+    document.getElementById('out').innerHTML = '<b style="color:red">✗ NON TROVATO in mod_invii</b><br>Provo mod_templates...';
+    db.collection('mod_templates').get().then(function(s){
+      var nomi = [];
+      s.forEach(function(d){ nomi.push(d.id+': '+d.data().nome); });
+      document.getElementById('out').innerHTML += '<br>Collezioni mod_invii vuota o ID errato.<br>Templates esistenti: '+nomi.join(', ');
+    });
+  }
+}).catch(function(e){
+  document.getElementById('out').innerHTML = '<b style="color:red">ERRORE: '+e.message+'</b>';
+});
+</script></body></html>

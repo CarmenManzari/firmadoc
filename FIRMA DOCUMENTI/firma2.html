@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Firma Documento — Gruppo tu.telati</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;background:#f5f5f5;color:#1a1a1a;min-height:100vh}
+.hdr{background:#1a1a1a;color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between}
+.hdr-logo{font-size:14px;font-weight:700}.hdr-logo em{color:#e8a020;font-style:normal}
+.hdr-mod{font-size:12px;color:#aaa;margin-top:2px}
+.wrap{max-width:600px;margin:0 auto;padding:20px 16px 48px}
+.card{background:#fff;border:1px solid #e0e0e0;border-radius:12px;padding:18px;margin-bottom:12px}
+.card-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#666;margin-bottom:10px}
+.stato{text-align:center;padding:40px 20px}
+.stato-icon{font-size:48px;margin-bottom:12px}
+.stato-titolo{font-size:18px;font-weight:700;margin-bottom:6px}
+.stato-sub{font-size:13px;color:#666;line-height:1.5}
+.spinner{width:40px;height:40px;border:4px solid #e0e0e0;border-top-color:#1a1a1a;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 16px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.pdf-wrap{border:2px solid #e0e0e0;border-radius:8px;overflow:hidden;margin-bottom:10px;background:#888}
+.pdf-canvas{display:block;width:100%}
+.pdf-nav{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#1a1a1a}
+.pdf-nav span{font-size:12px;color:#fff}
+.btn{padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:Arial;border:none;transition:background .15s;width:100%;margin-top:8px}
+.btn-primary{background:#1a1a1a;color:#fff}.btn-primary:hover{background:#333}
+.btn-primary:disabled{background:#ccc;cursor:not-allowed}
+.btn-secondary{background:#fff;color:#1a1a1a;border:1.5px solid #e0e0e0}
+.btn-green{background:#2d7a3a;color:#fff}
+.firma-box{border:2px dashed #e0e0e0;border-radius:8px;background:#fafafa;margin-bottom:10px;overflow:hidden}
+.firma-canvas{display:block;touch-action:none;cursor:crosshair}
+.firma-info{font-size:11px;color:#888;text-align:center;padding:8px}
+.firma-attiva{border-color:#e8a020;background:#FEF3E2}
+.firma-ok{border-color:#2d7a3a;background:#EAF3DE}
+.firma-label{font-size:12px;font-weight:700;padding:8px 12px;background:#f5f5f5;border-bottom:1px solid #e0e0e0;display:flex;align-items:center;justify-content:space-between}
+.firma-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:700}
+.badge-attesa{background:#FEF3E2;color:#B76A00}
+.badge-ok{background:#EAF3DE;color:#27500A}
+.campo-row{display:flex;flex-direction:column;gap:3px;margin-bottom:8px}
+.campo-row label{font-size:10px;font-weight:700;text-transform:uppercase;color:#999}
+.campo-row input{font-size:13px;padding:8px 10px;border:1.5px solid #e0e0e0;border-radius:7px;font-family:Arial}
+.campo-row input:focus{outline:none;border-color:#1a1a1a}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(10px);background:#1a1a1a;color:#fff;padding:9px 18px;border-radius:20px;font-size:12px;opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;z-index:999}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+/* OVERLAY ROTAZIONE */
+.rotate-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;flex-direction:column;align-items:center;justify-content:center;color:#fff;text-align:center;padding:30px}
+.rotate-overlay.show{display:flex}
+.rotate-icon{font-size:64px;animation:rotatePhone 1.5s ease-in-out infinite}
+@keyframes rotatePhone{0%,100%{transform:rotate(0deg)}50%{transform:rotate(90deg)}}
+.rotate-title{font-size:20px;font-weight:700;margin:20px 0 10px}
+.rotate-sub{font-size:14px;color:#ddd;line-height:1.6;margin-bottom:24px}
+.rotate-skip{background:#fff;color:#1a1a1a;border:none;border-radius:8px;padding:12px 28px;font-size:14px;font-weight:700;cursor:pointer;margin-top:8px}
+@media(orientation:landscape){.rotate-overlay{display:none!important}}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div>
+    <div class="hdr-logo">⚡ Gruppo <em>tu.telati</em></div>
+    <div class="hdr-mod" id="hdr_mod">Caricamento...</div>
+  </div>
+</div>
+
+<!-- OVERLAY ROTAZIONE -->
+<div class="rotate-overlay" id="rotate_overlay">
+  <div class="rotate-icon">📱</div>
+  <div class="rotate-title">Consiglio</div>
+  <div class="rotate-sub">Per firmare più comodamente,<br>prova a ruotare il telefono in orizzontale.<br>Ma puoi anche firmare così!</div>
+  <button class="rotate-skip" onclick="document.getElementById('rotate_overlay').classList.remove('show')">Continua comunque →</button>
+</div>
+
+<div class="wrap">
+  <!-- STATO: caricamento / errore / completato -->
+  <div id="schermo_stato" class="card stato">
+    <div class="spinner" id="spinner"></div>
+    <div class="stato-titolo" id="stato_titolo">Caricamento documento...</div>
+    <div class="stato-sub" id="stato_sub"></div>
+  </div>
+
+  <!-- STEP 1: Anteprima PDF -->
+  <div id="schermo_anteprima" style="display:none">
+    <div class="card">
+      <div class="card-title">📄 Documento da firmare</div>
+      <div class="pdf-nav">
+        <button class="btn-secondary" style="padding:4px 10px;font-size:11px;border:1px solid #555;background:none;color:#fff;border-radius:5px;cursor:pointer" onclick="cambiaPg(-1)">←</button>
+        <span id="pdf_lbl">Pagina 1 / 1</span>
+        <button class="btn-secondary" style="padding:4px 10px;font-size:11px;border:1px solid #555;background:none;color:#fff;border-radius:5px;cursor:pointer" onclick="cambiaPg(1)">→</button>
+      </div>
+      <div class="pdf-wrap"><canvas class="pdf-canvas" id="pdf_canvas"></canvas></div>
+      <button class="btn btn-primary" onclick="vaiAFirma()">✍️ Procedi alla firma</button>
+    </div>
+  </div>
+
+  <!-- STEP 2: Dati e firme -->
+  <div id="schermo_firma" style="display:none">
+    <div class="card">
+      <div class="card-title">📝 I tuoi dati</div>
+      <div class="campo-row"><label>Luogo firma</label><input type="text" id="inp_luogo" placeholder="Es. Bari"></div>
+      <div class="campo-row"><label>Data</label><input type="date" id="inp_data"></div>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <button class="btn btn-secondary" style="margin-top:0" onclick="document.querySelectorAll('.firma-canvas').forEach(function(cv,i){pulisciFirma(i);})">🗑 Cancella firma</button>
+        <button class="btn btn-green" style="margin-top:0" id="btn_invia" onclick="inviaFirme()">📤 Invia documento firmato</button>
+      </div>
+    </div>
+
+    <div id="firme_container"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== FIREBASE =====
+firebase.initializeApp({
+  apiKey:"AIzaSyCVqrDWJDLtyGUzPBtvkHOMxBERO4ixKX0",
+  authDomain:"crm-servizi.firebaseapp.com",
+  projectId:"crm-servizi",
+  storageBucket:"crm-servizi.firebasestorage.app",
+  messagingSenderId:"611069430965",
+  appId:"1:611069430965:web:6b1f36552c007c438942fc"
+});
+var db = firebase.firestore();
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ===== STATO =====
+var P = new URLSearchParams(window.location.search);
+var docInvioId = P.get('did') || '';
+var templateData = null;
+var invioData = null;
+var pdfDoc = null;
+var pdfBytes = null;
+var totalPages = 1;
+var currentPage = 1;
+var firmeAttive = []; // [{pagina, xPct, yPct, index, dataUrl, canvas, ctx}]
+var firmaCorrente = -1;
+var disegnando = false;
+var lx = 0, ly = 0;
+
+// ===== UI =====
+function showStato(titolo, sub, spinner) {
+  document.getElementById('schermo_stato').style.display = 'block';
+  document.getElementById('schermo_anteprima').style.display = 'none';
+  document.getElementById('schermo_firma').style.display = 'none';
+  document.getElementById('spinner').style.display = spinner ? 'block' : 'none';
+  document.getElementById('stato_titolo').textContent = titolo;
+  document.getElementById('stato_sub').textContent = sub || '';
+}
+
+function showAnteprima() {
+  document.getElementById('schermo_stato').style.display = 'none';
+  document.getElementById('schermo_anteprima').style.display = 'block';
+  document.getElementById('schermo_firma').style.display = 'none';
+}
+
+function showFirma() {
+  document.getElementById('schermo_stato').style.display = 'none';
+  document.getElementById('schermo_anteprima').style.display = 'none';
+  document.getElementById('schermo_firma').style.display = 'block';
+}
+
+function showToast(msg) {
+  var t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(function(){ t.classList.remove('show'); }, 2500);
+}
+
+// ===== INIT =====
+document.getElementById('inp_data').value = new Date().toISOString().split('T')[0];
+
+async function init() {
+  showStato('Caricamento documento...', '', true);
+
+  if (!docInvioId) {
+    showStato('Link non valido', 'Contatta il consulente per un nuovo link.', false);
+    return;
+  }
+
+  try {
+    // Carica invio
+    var invioDoc = await db.collection('mod_invii').doc(docInvioId).get();
+    if (!invioDoc.exists) {
+      showStato('Link non valido', 'Il link potrebbe essere scaduto. Contatta il consulente.', false);
+      return;
+    }
+    invioData = invioDoc.data();
+    document.getElementById('hdr_mod').textContent = invioData.nomeModulo || 'Documento';
+
+    // Carica template
+    showStato('Caricamento modulo...', '', true);
+    var tplDoc = await db.collection('mod_templates').doc(invioData.templateId).get();
+    if (!tplDoc.exists) {
+      showStato('Modulo non trovato', 'Contatta il consulente.', false);
+      return;
+    }
+    templateData = tplDoc.data();
+
+    if (!templateData.pdfData) {
+      showStato('PDF mancante', 'Ricrea il template e riprova.', false);
+      return;
+    }
+
+    // Carica PDF
+    showStato('Caricamento PDF...', '', true);
+    var b64 = templateData.pdfData.split(',')[1];
+    var bin = atob(b64);
+    pdfBytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) pdfBytes[i] = bin.charCodeAt(i);
+    pdfDoc = await pdfjsLib.getDocument({ data: pdfBytes }).promise;
+    totalPages = pdfDoc.numPages;
+
+    // Determina firme
+    var tutteFirme = [];
+    if (templateData.elementi && templateData.elementi.length) {
+      tutteFirme = templateData.elementi.filter(function(e){ return e.tipo === 'firma'; });
+    } else if (templateData.firme && templateData.firme.length) {
+      // Vecchio formato: normalizza pos.xPct → xPct
+      tutteFirme = templateData.firme.map(function(f) {
+        var xPct = f.xPct !== undefined ? f.xPct : (f.pos ? f.pos.xPct : 0);
+        var yPct = f.yPct !== undefined ? f.yPct : (f.pos ? f.pos.yPct : 0);
+        return { nome: f.nome||'Firma', pagina: f.pagina||1, xPct: xPct, yPct: yPct };
+      });
+    }
+
+    console.log('Firme trovate:', tutteFirme.length, tutteFirme);
+
+    var idxDaUsare = (invioData.firmeIdx && invioData.firmeIdx.length) ? invioData.firmeIdx : null;
+    if (idxDaUsare) {
+      firmeAttive = idxDaUsare.filter(function(i){ return i < tutteFirme.length; })
+        .map(function(i){ return Object.assign({}, tutteFirme[i], {index:i, dataUrl:null}); });
+    } else {
+      firmeAttive = tutteFirme.map(function(f,i){ return Object.assign({},f,{index:i,dataUrl:null}); });
+    }
+    
+    console.log('Firme attive:', firmeAttive.length, firmeAttive);
+
+    if (!firmeAttive.length) {
+      showStato('Nessuna firma richiesta', 'Contatta il consulente.', false);
+      return;
+    }
+
+    // Mostra anteprima
+    await renderPdfPagina(1);
+    showAnteprima();
+
+  } catch(e) {
+    showStato('Errore: ' + e.message, 'Riprova o contatta il consulente.', false);
+  }
+}
+
+// ===== PDF =====
+async function renderPdfPagina(n) {
+  currentPage = n;
+  document.getElementById('pdf_lbl').textContent = 'Pagina ' + n + ' / ' + totalPages;
+  var page = await pdfDoc.getPage(n);
+  var cv = document.getElementById('pdf_canvas');
+  var w = cv.parentElement.offsetWidth || 560;
+  var vp = page.getViewport({scale:1});
+  var sc = w / vp.width;
+  var sv = page.getViewport({scale:sc});
+  cv.width = sv.width; cv.height = sv.height;
+  await page.render({canvasContext:cv.getContext('2d'), viewport:sv}).promise;
+}
+
+function cambiaPg(dir) {
+  var n = currentPage + dir;
+  if (n >= 1 && n <= totalPages) renderPdfPagina(n);
+}
+
+// ===== FIRMA =====
+function vaiAFirma() {
+  costruisciFirme();
+  showFirma();
+}
+
+function costruisciFirme() {
+  var container = document.getElementById('firme_container');
+  container.innerHTML = '';
+  firmeAttive.forEach(function(f, i) {
+    var div = document.createElement('div');
+    div.className = 'card';
+    div.id = 'firma_card_' + i;
+    div.innerHTML = '<div class="firma-label">✍️ Firma ' + (i+1) + ' <span class="firma-badge badge-attesa" id="badge_' + i + '">In attesa</span></div>' +
+      '<div class="firma-box" id="firma_box_' + i + '">' +
+        '<canvas class="firma-canvas" id="firma_cv_' + i + '" width="900" height="260"></canvas>' +
+        '<div class="firma-info">Disegna la firma qui sopra con il dito o il mouse — usa tutto lo spazio orizzontale</div>' +
+      '</div>' +
+      '<button class="btn btn-secondary" style="margin-top:4px" onclick="pulisciFirma(' + i + ')">🗑 Cancella</button>';
+    container.appendChild(div);
+    initCanvas(i);
+  });
+}
+
+function initCanvas(i) {
+  var cv = document.getElementById('firma_cv_' + i);
+
+  // Canvas ad alta risoluzione (2x) per tratto nitido
+  var DPR = window.devicePixelRatio || 2;
+  var displayW = cv.offsetWidth || 900;
+  var displayH = 260;
+  cv.width  = displayW * DPR;
+  cv.height = displayH * DPR;
+  cv.style.width  = displayW + 'px';
+  cv.style.height = displayH + 'px';
+
+  var ctx = cv.getContext('2d');
+  ctx.scale(DPR, DPR); // tutto il disegno avviene in coordinate CSS
+
+  firmeAttive[i].canvas = cv;
+  firmeAttive[i].ctx = ctx;
+  firmeAttive[i].disegnando = false;
+
+  // Buffer punti per Bézier smooth
+  var punti = [];
+  var velocitaMedia = 0;
+
+  function getPos(e) {
+    var r = cv.getBoundingClientRect();
+    if (e.touches) {
+      return { x: e.touches[0].clientX - r.left, y: e.touches[0].clientY - r.top };
+    }
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  // Calcola spessore dinamico in base alla velocità del gesto
+  function calcolaSpessore(dist) {
+    // Più veloce = tratto più sottile (come una penna reale)
+    velocitaMedia = velocitaMedia * 0.85 + dist * 0.15;
+    var sp = 3.5 - Math.min(velocitaMedia * 0.08, 2.2);
+    return Math.max(0.8, Math.min(sp, 3.5));
+  }
+
+  // Disegna curva quadratica tra i punti accumulati
+  function disegnaCurva() {
+    if (punti.length < 3) return;
+    var len = punti.length;
+    var p0 = punti[len - 3];
+    var p1 = punti[len - 2];
+    var p2 = punti[len - 1];
+
+    // Punto di controllo: metà tra p1 e p2
+    var mx = (p1.x + p2.x) / 2;
+    var my = (p1.y + p2.y) / 2;
+
+    var dist = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+    var sp = calcolaSpessore(dist);
+
+    ctx.beginPath();
+    ctx.moveTo((p0.x + p1.x) / 2, (p0.y + p1.y) / 2);
+    ctx.quadraticCurveTo(p1.x, p1.y, mx, my);
+
+    // Inchiostro blu-nero profondo, leggermente trasparente per sovrapposizione naturale
+    ctx.strokeStyle = 'rgba(15, 25, 60, 0.88)';
+    ctx.lineWidth = sp;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+  }
+
+  function start(e) {
+    e.preventDefault();
+    firmeAttive[i].disegnando = true;
+    velocitaMedia = 0;
+    punti = [];
+    var p = getPos(e);
+    punti.push(p);
+    firmeAttive[i].lx = p.x; firmeAttive[i].ly = p.y;
+    // Punto iniziale: piccolo cerchio morbido
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(15, 25, 60, 0.88)';
+    ctx.fill();
+    document.getElementById('firma_box_' + i).className = 'firma-box firma-attiva';
+  }
+
+  function move(e) {
+    e.preventDefault();
+    if (!firmeAttive[i].disegnando) return;
+    var p = getPos(e);
+    punti.push(p);
+    disegnaCurva();
+    firmeAttive[i].lx = p.x; firmeAttive[i].ly = p.y;
+  }
+
+  function stop(e) {
+    if (!firmeAttive[i].disegnando) return;
+    firmeAttive[i].disegnando = false;
+
+    // Chiudi l'ultimo tratto rimasto nel buffer
+    if (punti.length >= 2) {
+      var p = punti[punti.length - 1];
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 0.8, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(15, 25, 60, 0.7)';
+      ctx.fill();
+    }
+    punti = [];
+
+    firmeAttive[i].dataUrl = cv.toDataURL('image/png');
+    firmeAttive[i].eraPortrait = isPortrait();
+    document.getElementById('firma_box_' + i).className = 'firma-box firma-ok';
+    document.getElementById('badge_' + i).className = 'firma-badge badge-ok';
+    document.getElementById('badge_' + i).textContent = '✓ Firmato';
+  }
+
+  cv.addEventListener('mousedown', start);
+  cv.addEventListener('mousemove', move);
+  cv.addEventListener('mouseup', stop);
+  cv.addEventListener('mouseleave', stop);
+  cv.addEventListener('touchstart', start, {passive:false});
+  cv.addEventListener('touchmove', move, {passive:false});
+  cv.addEventListener('touchend', stop);
+}
+
+function pulisciFirma(i) {
+  var cv = firmeAttive[i].canvas;
+  firmeAttive[i].ctx.clearRect(0, 0, cv.width, cv.height);
+  firmeAttive[i].dataUrl = null;
+  document.getElementById('firma_box_' + i).className = 'firma-box';
+  document.getElementById('badge_' + i).className = 'firma-badge badge-attesa';
+  document.getElementById('badge_' + i).textContent = 'In attesa';
+}
+
+// ===== NOTIFICA TELEGRAM =====
+// Avvisa in automatico quando un cliente invia la firma. Se fallisce,
+// non blocca né influenza in alcun modo il salvataggio della firma (che resta invariato).
+function notificaWhatsApp(nomeCliente, nomeModulo){
+  var BOT_TOKEN = '8878679679:AAEPAXzymdP5p_CwnLZN4zMnn0gDHmkQR9A';
+  var CHAT_ID   = '5657428829';
+  var testo = '✅ Nuova firma ricevuta\n' + (nomeCliente||'Cliente') + ' - ' + (nomeModulo||'');
+  fetch('https://api.telegram.org/bot'+BOT_TOKEN+'/sendMessage?chat_id='+CHAT_ID+'&text='+encodeURIComponent(testo))
+    .catch(function(){ /* notifica non riuscita: nessun impatto sul resto */ });
+}
+
+// ===== INVIA =====
+async function inviaFirme() {
+  var mancanti = firmeAttive.filter(function(f){ return !f.dataUrl; });
+  if (mancanti.length) {
+    showToast('Devi firmare tutti i campi richiesti');
+    return;
+  }
+
+  var btn = document.getElementById('btn_invia');
+  btn.disabled = true; btn.textContent = '⏳ Elaborazione firma...';
+
+  var luogo = document.getElementById('inp_luogo').value || '';
+  var dataVal = document.getElementById('inp_data').value || '';
+  var dataParts = dataVal.split('-');
+  var dataFmt = dataParts.length === 3 ? dataParts[2]+'/'+dataParts[1]+'/'+dataParts[0] : dataVal;
+
+  // Ruota le firme in portrait prima di salvarle
+  var firmeElaborate = await Promise.all(firmeAttive.map(function(f){
+    return new Promise(function(resolve){
+      ruotaFirmaSeNecessario(f.dataUrl, f.eraPortrait||false, function(dataUrlOk){
+        resolve({
+          pagina: f.pagina || 1,
+          dataUrl: dataUrlOk,
+          pos: { xPct: f.xPct || 0, yPct: f.yPct || 0 }
+        });
+      });
+    });
+  }));
+
+  try {
+    await db.collection('mod_firmati').add({
+      clienteId: (invioData && invioData.clienteId) || '',
+      nomeCliente: (invioData && invioData.nomeCliente) || '',
+      nomeModulo: (templateData && templateData.nome) || '',
+      templateId: (invioData && invioData.templateId) || '',
+      invioId: docInvioId || '',
+      firmeData: firmeElaborate,
+      luogo: luogo,
+      data: dataFmt,
+      numerofirme: firmeAttive.length,
+      timestamp: new Date().toISOString()
+    });
+    notificaWhatsApp((invioData && invioData.nomeCliente) || '', (templateData && templateData.nome) || '');
+    showStato('✅ Documento firmato con successo!', 'Grazie. Il consulente riceverà il documento firmato.', false);
+  } catch(e) {
+    btn.disabled = false; btn.textContent = '📤 Invia documento firmato';
+    showToast('Errore: ' + e.message);
+  }
+}
+
+// Avvia
+init();
+function isMobile(){ return /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent); }
+function isPortrait(){ return window.innerHeight > window.innerWidth; }
+
+function aggiornaOverlay(){
+  var inFirma = document.getElementById('schermo_firma').style.display !== 'none';
+  var overlay = document.getElementById('rotate_overlay');
+  if(isMobile() && isPortrait() && inFirma){
+    overlay.classList.add('show');
+  } else {
+    overlay.classList.remove('show');
+  }
+}
+window.addEventListener('orientationchange', function(){ setTimeout(aggiornaOverlay, 300); });
+window.addEventListener('resize', aggiornaOverlay);
+
+// Override showFirma per aggiornare overlay
+var _showFirmaOrig = showFirma;
+showFirma = function(){
+  _showFirmaOrig();
+  setTimeout(aggiornaOverlay, 100);
+};
+
+// ===== ROTAZIONE FIRMA NEL PDF =====
+// Ruota il dataUrl della firma di 90° se catturata in portrait
+function ruotaFirmaSeNecessario(dataUrl, eraPortrait, callback){
+  if(!eraPortrait){ callback(dataUrl); return; }
+  var img = new Image();
+  img.onload = function(){
+    // Ruota 90° antiorario per adattare al box orizzontale nel PDF
+    var cv = document.createElement('canvas');
+    cv.width = img.height; cv.height = img.width;
+    var ctx = cv.getContext('2d');
+    ctx.translate(cv.width/2, cv.height/2);
+    ctx.rotate(-Math.PI/2);
+    ctx.drawImage(img, -img.width/2, -img.height/2);
+    callback(cv.toDataURL('image/png'));
+  };
+  img.src = dataUrl;
+}
+</script>
+</body>
+</html>
