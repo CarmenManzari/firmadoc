@@ -7,6 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0} body{font-family:Arial,sans-serif;background:#f0f0ec;color:#1a1a1a;min-height:100vh}
 .hdr{background:#1a1a1a;color:#fff;padding:0 20px;height:54px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200}
@@ -42,7 +43,7 @@
 </style>
 </head>
 <body>
-<div class="hdr"><div><div class="hdr-logo">⚡ Gruppo <em>tu.telati</em></div></div><div class="hdr-nav"><button class="nav-btn active" onclick="goPage('crea',this)">Crea</button><button class="nav-btn" onclick="goPage('invia',this)">Invia</button><button class="nav-btn" onclick="goPage('archivio',this)">Archivio</button></div></div>
+<div class="hdr"><div><div class="hdr-logo">⚡ Gruppo <em>Professione Tutela Utenze</em></div></div><div class="hdr-nav"><button class="nav-btn active" onclick="goPage('crea',this)">Crea</button><button class="nav-btn" onclick="goPage('invia',this)">Invia</button><button class="nav-btn" onclick="goPage('archivio',this)">Archivio</button></div></div>
 <div class="wrap">
 
 <!-- CREA -->
@@ -93,13 +94,7 @@
 <script>
 firebase.initializeApp({apiKey:"AIzaSyCVqrDWJDLtyGUzPBtvkHOMxBERO4ixKX0",authDomain:"crm-servizi.firebaseapp.com",projectId:"crm-servizi",storageBucket:"crm-servizi.firebasestorage.app",messagingSenderId:"611069430965",appId:"1:611069430965:web:6b1f36552c007c438942fc"});
 const db=firebase.firestore();
-
-// === CONFIG NUOVO BRAND ===
-const CONFIG_BRAND = {
-  nome: "Professione Tutela Utenze",
-  dominioFirma: "https://firmadoc.professionetutelautenze.workers.dev/firma2.html"
-};
-
+const authReady=firebase.auth().signInAnonymously().catch(e=>{ alert('Accesso anonimo non riuscito: '+e.code+' - '+e.message+'\nControlla che in Firebase > Authentication > Metodo di accesso sia attivo "Anonimo"'); });
 pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 let templates=[], tplSel=null, pdfDoc=null, pdfData=null, pagina=1, elementi=[], modalita='firma';
 let crmClienti=[], invioIdCorrente=null;
@@ -111,9 +106,17 @@ setMode('firma');
 // PDF CREA
 document.getElementById('pdf_file').addEventListener('change', async e=>{
   const file=e.target.files[0]; if(!file) return;
-  const buf=await file.arrayBuffer(); pdfData='data:application/pdf;base64,'+btoa(String.fromCharCode(...new Uint8Array(await file.arrayBuffer())));
-  // per pdfjs usa buf originale
-  const buf2=await file.arrayBuffer(); pdfDoc=await pdfjsLib.getDocument({data:buf2}).promise; pagina=1; elementi=[]; renderPagina();
+  showToast('Caricamento PDF...');
+  try{
+    const buf=await file.arrayBuffer();
+    const bytes=new Uint8Array(buf);
+    let binary=''; const chunk=8192;
+    for(let i=0;i<bytes.length;i+=chunk){ binary+=String.fromCharCode(...bytes.subarray(i,i+chunk)); }
+    pdfData='data:application/pdf;base64,'+btoa(binary);
+    pdfDoc=await pdfjsLib.getDocument({data:buf.slice(0)}).promise; 
+    pagina=1; elementi=[]; renderPagina();
+    showToast('PDF caricati ✓');
+  }catch(err){ showToast('Errore PDF: '+err.message); }
 });
 async function renderPagina(){
   if(!pdfDoc) return;
@@ -132,10 +135,18 @@ function renderOverlay(){
     else d.textContent=el.campo;
     d.addEventListener('pointerdown', ev=>startDrag(ev,el,d));
     d.addEventListener('dblclick', ()=>{ elementi=elementi.filter(x=>x!==el); renderOverlay(); });
+    const xBtn=document.createElement('span'); xBtn.textContent='✕'; xBtn.style.cssText='position:absolute;top:-10px;right:-10px;background:red;color:#fff;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;cursor:pointer;';
+    xBtn.onclick=(ev)=>{ ev.stopPropagation(); elementi=elementi.filter(x=>x!==el); renderOverlay(); };
+    d.appendChild(xBtn);
     ov.appendChild(d);
   });
-  document.getElementById('elem_list').innerHTML=elementi.filter(e=>e.pagina===pagina).map(e=>`<div class="elem-row"><span class="badge ${e.tipo==='firma'?'badge-f':'badge-d'}">${e.tipo}</span> ${e.campo||'firma'} — x:${e.xPct.toFixed(3)} y:${e.yPct.toFixed(3)} ${e.wPct?' w:'+e.wPct.toFixed(3):''}</div>`).join('')||'<div class="empty">Nessun elemento in questa pagina — clicca sul PDF</div>';
+  document.getElementById('elem_list').innerHTML=elementi.filter(e=>e.pagina===pagina).map((e,i)=>{
+    const idx=elementi.indexOf(e);
+    return `<div class="elem-row"><span class="badge ${e.tipo==='firma'?'badge-f':'badge-d'}">${e.tipo}</span> ${e.campo||'firma'} — x:${e.xPct.toFixed(2)} y:${e.yPct.toFixed(2)} <button onclick="cancellaElem(${idx})" style="margin-left:auto;background:#ff4444;color:#fff;border:none;border-radius:4px;padding:2px 8px;font-size:10px;cursor:pointer">🗑️ Cancella</button></div>`;
+  }).join('')||'<div class="empty">Nessun elemento — clicca PDF. ✕ o Cancella se metti 2 firme</div>';
 }
+function cancellaElem(i){ elementi.splice(i,1); renderOverlay(); showToast('Firma eliminata ✓'); }
+
 const container=document.getElementById('pdf_container'), canvas=document.getElementById('pdf_canvas'), overlay=document.getElementById('overlay');
 container.addEventListener('click', e=>{
   if(!pdfDoc) return; if(e.target!==canvas && e.target!==overlay) return;
@@ -152,8 +163,14 @@ function cambiaPg(d){ if(!pdfDoc) return; const np=pagina+d; if(np<1||np>pdfDoc.
 
 async function salvaTemplate(){
   if(!pdfData){ showToast('Carica PDF'); return; } const nome=document.getElementById('tpl_nome').value.trim(); if(!nome){ showToast('Inserisci nome modulo'); return; }
-  await db.collection('mod_templates').add({nome, pdfData, elementi, createdAt:new Date().toISOString()});
-  showToast('Template salvato ✓'); loadTemplates();
+  const kb=Math.round(pdfData.length/1024);
+  if(pdfData.length>950000){ alert('⚠️ PDF troppo pesante per il salvataggio ('+kb+' KB, limite ~900 KB). Comprimi il PDF (es. smallpdf / ilovepdf) e ricaricalo.'); return; }
+  try{
+    await db.collection('mod_templates').add({nome, pdfData, elementi, createdAt:new Date().toISOString()});
+    showToast('Template salvato ✓'); loadTemplates();
+  }catch(err){
+    alert('❌ SALVATAGGIO FALLITO\n\nCodice: '+(err.code||'-')+'\nMessaggio: '+err.message+'\nPeso PDF: '+kb+' KB');
+  }
 }
 
 // TEMPLATES LIST
@@ -171,36 +188,64 @@ async function generaLink(){
   const dati=getDati(); if(!dati.nome){ showToast('Inserisci nome'); return; }
   const docRef=await db.collection('mod_invii').add({templateId:tplSel.id, nomeModulo:tplSel.nome, nomeCliente:dati.nome, clienteId:'', datiCliente:dati, stato:'inviato', createdAt:new Date().toISOString()});
   invioIdCorrente=docRef.id;
-  const baseUrl=CONFIG_BRAND.dominioFirma.replace('/firma2.html','');
-  const link=CONFIG_BRAND.dominioFirma+'?id='+docRef.id;
+  const baseUrl=location.origin+location.pathname.replace('index.html','')+'firma2.html';
+  const link=baseUrl+'?id='+docRef.id;
   document.getElementById('link_input').value=link; document.getElementById('link_box').style.display='block';
-  // salva bozza
   await db.collection('mod_bozze').add({templateId:tplSel.id, datiCliente:dati, link, createdAt:new Date().toISOString()});
-  showToast('Link generato ✓');
+  showToast('Link generato ✓ — vademecum pronto');
 }
-function copiaLink(){ navigator.clipboard.writeText(document.getElementById('link_input').value); showToast('Copiato ✓'); }
-function apriWhatsApp(){ const tel=document.getElementById('d_tel').value.replace(/\D/g,''); const link=document.getElementById('link_input').value; const msg=encodeURIComponent('Ciao, ecco il documento da firmare: '+link); 
-  const nomeDoc = tplSel ? tplSel.nome : 'TISCALI';
-  const testoWA = `Gentile Cliente,
+function copiaLink(){ 
+  const link=document.getElementById('link_input').value;
+  const nome=document.getElementById('d_nome').value||'';
+  const nomeModulo=tplSel? tplSel.nome.toUpperCase() : 'DOCUMENTO';
+  // Conta quante firme ci sono nel template
+  const numFirme=(tplSel&&tplSel.elementi? tplSel.elementi.filter(e=>e.tipo==='firma').length : 8);
+  const vademecum=`Gentile Cliente,
 
-le inviamo il documento ${nomeDoc} già compilato con i suoi dati, da firmare online.
+le inviamo il documento ${nomeModulo} già compilato con i suoi dati, da firmare online.
 
-◆ Come procedere:
-◆ Apra il link qui sotto
-◆ Controlli che i dati siano corretti
-◆ Firmi in tutti i punti indicati
-◆ Prema il pulsante "Invia firma" in fondo alla pagina
+Come procedere:
+- Apra il link qui sotto
+- Controlli che i dati siano corretti
+- Firmi in tutti e ${numFirme} punti indicati
+- Prema il pulsante "Invia firma" in fondo alla pagina
 
-◆ Attenzione: se non preme "Invia firma" alla fine, la firma non viene salvata e dovrà ripetere la procedura.
+Attenzione: se non preme "Invia firma" alla fine, la firma non viene salvata e dovrà ripetere la procedura.
 
 ${link}
 
 Per qualsiasi difficoltà siamo a disposizione.
 
-${CONFIG_BRAND.nome}`;
-  const encoded = encodeURIComponent(testoWA);
-  window.open('https://wa.me/'+(tel? '39'+tel : '')+'?text='+encoded,'_blank');
- }
+Professione Tutela Utenze`;
+  navigator.clipboard.writeText(vademecum); 
+  showToast('Vademecum copiato ✓ — incolla su WhatsApp'); 
+}
+function apriWhatsApp(){ 
+  const tel=document.getElementById('d_tel').value.replace(/\D/g,''); 
+  const link=document.getElementById('link_input').value;
+  const nomeModulo=tplSel? tplSel.nome.toUpperCase() : 'DOCUMENTO';
+  const numFirme=(tplSel&&tplSel.elementi? tplSel.elementi.filter(e=>e.tipo==='firma').length : 8);
+  const msg=`Gentile Cliente,
+
+le inviamo il documento ${nomeModulo} già compilato con i suoi dati, da firmare online.
+
+🔹 Come procedere:
+🔹 Apra il link qui sotto
+🔹 Controlli che i dati siano corretti
+🔹 Firmi in tutti e ${numFirme} punti indicati
+🔹 Prema il pulsante "Invia firma" in fondo alla pagina
+
+🔹 Attenzione: se non preme "Invia firma" alla fine, la firma non viene salvata e dovrà ripetere la procedura.
+
+🔹
+${link}
+
+Per qualsiasi difficoltà siamo a disposizione.
+
+Professione Tutela Utenze`;
+  const enc=encodeURIComponent(msg);
+  window.open('https://wa.me/'+(tel? '39'+tel : '')+'?text='+enc,'_blank'); 
+}
 
 // PDF COMPILATO STATICO - FIX
 async function scaricaPdfCompilato(){
@@ -231,12 +276,22 @@ async function scaricaPdfEditabileAnteprima(){
   doc.save((tplSel.nome||'modulo').replace(/\s+/g,'-')+'_EDITABILE.pdf'); showToast('PDF editabile scaricato ✓ — apribile in Acrobat/Chrome e modificabile');
 }
 
-// ARCHIVIO + RICOSTRUZIONE FIX
+// ARCHIVIO + RICOSTRUZIONE FIX + SOLO FIRME
 async function loadArchivio(){
   const bSnap=await db.collection('mod_bozze').orderBy('createdAt','desc').limit(20).get(); const bozze=[]; bSnap.forEach(d=>bozze.push({id:d.id,...d.data()}));
   document.getElementById('arch_bozze').innerHTML=bozze.map(b=>`<div style="display:flex;justify-content:space-between;padding:8px;border:1px solid #e0e0e0;border-radius:8px;margin-bottom:6px;font-size:12px"><span>${(b.datiCliente&&b.datiCliente.nome)||'Bozza'}</span><button class="btn btn-primary" style="padding:4px 8px;font-size:10px" onclick="riprendiBozza('${b.id}')">Riprendi</button></div>`).join('')||'<div class="empty">Nessuna bozza</div>';
   const fSnap=await db.collection('mod_firmati').orderBy('timestamp','desc').limit(30).get(); const firmati=[]; fSnap.forEach(d=>firmati.push({id:d.id,...d.data()}));
-  document.getElementById('arch_firmati').innerHTML=firmati.map(m=>`<div style="display:flex;align-items:center;gap:10px;padding:8px;border:1px solid #e0e0e0;border-radius:8px;margin-bottom:6px"><span>✅</span><div style="flex:1"><div style="font-size:12px;font-weight:700">${m.nomeModulo||''}</div><div style="font-size:10px;color:#888">${m.nomeCliente||''} · ${m.data||''}</div></div><button class="btn btn-primary" style="padding:4px 8px;font-size:10px" onclick="scaricaFirmato('${m.id}')">⬇ PDF</button></div>`).join('')||'<div class="empty">Nessun firmato</div>';
+  document.getElementById('arch_firmati').innerHTML=firmati.map(m=>`<div style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid #e0e0e0;border-radius:8px;margin-bottom:6px"><span>✅</span><div style="flex:1"><div style="font-size:12px;font-weight:700">${m.nomeModulo||''}</div><div style="font-size:10px;color:#888">${m.nomeCliente||''} · ${m.data||''} · ${((m.firmeData||[]).length)} firme</div></div><div style="display:flex;gap:4px"><button class="btn btn-primary" style="padding:4px 8px;font-size:10px" onclick="scaricaFirmato('${m.id}')">⬇ PDF</button><button class="btn btn-amber" style="padding:4px 8px;font-size:10px" onclick="scaricaSoloFirme('${m.id}')">✍️ Solo firme</button></div></div>`).join('')||'<div class="empty">Nessun firmato</div>';
+}
+async function scaricaSoloFirme(docId){
+  showToast('Scarico firme...');
+  const docSnap=await db.collection('mod_firmati').doc(docId).get(); if(!docSnap.exists){ showToast('Non trovato'); return; }
+  const m=docSnap.data(); if(!m.firmeData||!m.firmeData.length){ showToast('Nessuna firma'); return; }
+  m.firmeData.forEach((f,idx)=>{
+    if(!f.dataUrl) return;
+    const a=document.createElement('a'); a.href=f.dataUrl; a.download=`${(m.nomeCliente||'cliente').replace(/\s+/g,'-')}_firma${idx+1}_p${f.pagina||1}.png`; document.body.appendChild(a); a.click(); setTimeout(()=>a.remove(),500);
+  });
+  showToast(`${m.firmeData.length} firme scaricate ✓`);
 }
 async function riprendiBozza(id){ const doc=await db.collection('mod_bozze').doc(id).get(); if(!doc.exists) return; const b=doc.data(); goPage('invia',document.querySelectorAll('.nav-btn')[1]); setTimeout(()=>{ selTpl(b.templateId); Object.keys(b.datiCliente||{}).forEach(k=>{ const el=document.getElementById('d_'+k); if(el) el.value=b.datiCliente[k]; }); },400); }
 async function scaricaFirmato(docId){
@@ -253,7 +308,9 @@ async function ricostruisciPdf(m,tpl,dati){
       if(pg>1) doc.addPage(); const page=await src.getPage(pg); const vp=page.getViewport({scale:2}); const off=document.createElement('canvas'); off.width=vp.width; off.height=vp.height; await page.render({canvasContext:off.getContext('2d'),viewport:vp}).promise; doc.addImage(off.toDataURL('image/jpeg',0.85),'JPEG',0,0,W,H);
       (tpl.elementi||[]).filter(e=>e.tipo==='dato'&&e.pagina===pg).forEach(e=>{ const v=dati[e.campo]||''; if(!v) return; doc.setFontSize(9); doc.setFont('helvetica','bold'); doc.setTextColor(24,95,165); doc.text(String(v), e.xPct*W, e.yPct*H, {align:'center'}); doc.setTextColor(0); });
       (m.firmeData||[]).filter(f=>f.pagina===pg&&f.dataUrl).forEach(f=>{
-        if(!f.pos) return; const fw=(f.wPct||0.26)*W, fh=(f.hPct||0.065)*H; const fx=f.pos.xPct*W-fw/2, fy=f.pos.yPct*H-fh/2; const sfx=Math.max(2,Math.min(W-fw-2,fx)), sfy=Math.max(2,Math.min(H-fh-2,fy)); doc.addImage(f.dataUrl,'PNG',sfx,sfy,fw,fh); doc.setDrawColor(160); doc.setLineWidth(0.2); doc.line(sfx,sfy+fh+0.5,sfx+fw,sfy+fh+0.5); doc.setFontSize(7); doc.setFont('helvetica','normal'); doc.setTextColor(80); doc.text((m.luogo||'')+', '+(m.data||''),sfx,sfy-1); doc.setTextColor(0);
+        if(!f.pos) return; const fw=(f.wPct||0.26)*W, fh=(f.hPct||0.065)*H; const fx=f.pos.xPct*W-fw/2, fy=f.pos.yPct*H-fh/2; const sfx=Math.max(2,Math.min(W-fw-2,fx)), sfy=Math.max(2,Math.min(H-fh-2,fy)); doc.setFillColor(255,255,255);
+        doc.rect(sfx-2, sfy+fh-2, fw+4, 12, 'F');
+        doc.addImage(f.dataUrl,'PNG',sfx,sfy,fw,fh); doc.setFontSize(7); doc.setFont('helvetica','normal'); doc.setTextColor(80); doc.text((m.luogo||'')+', '+(m.data||''),sfx,sfy-1); doc.setTextColor(0);
       });
     }
     doc.save((m.nomeModulo||'modulo').replace(/\s+/g,'-')+'_'+(m.nomeCliente||'').replace(/\s+/g,'-')+'_firmato_FIX.pdf'); showToast('PDF scaricato ✓');

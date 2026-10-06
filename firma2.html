@@ -2,10 +2,11 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Firma Documento — FINALE FIX stabile + editabile</title>
+<title>Firma Documento — FIX precisa + posizione regolabile</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0} body{font-family:Arial;background:#f5f5f5;min-height:100vh}
 .hdr{background:#1a1a1a;color:#fff;padding:14px 20px} .wrap{max-width:640px;margin:0 auto;padding:16px 16px 40px}
@@ -14,24 +15,30 @@
 .pdf-canvas{display:block;width:100%}
 .btn{width:100%;padding:12px;border-radius:8px;font-weight:700;border:none;cursor:pointer;margin-top:8px}
 .btn-primary{background:#1a1a1a;color:#fff} .btn-green{background:#2d7a3a;color:#fff}
-.firma-box{border:2px dashed #e8a020;border-radius:8px;background:#fff;overflow:hidden;margin-bottom:12px}
-.firma-canvas{display:block;width:100%;height:200px;touch-action:none;cursor:crosshair}
-.firma-label{font-size:12px;font-weight:700;padding:8px 12px;background:#f5f5f5;display:flex;justify-content:space-between}
+.firma-box{border:2px dashed #e8a020;border-radius:8px;background:#fff;overflow:hidden;margin-bottom:8px;position:relative}
+.firma-canvas{display:block;width:100%;height:240px;touch-action:none;cursor:crosshair;background:#fff}
+.firma-label{font-size:12px;font-weight:700;padding:8px 12px;background:#f5f5f5;display:flex;justify-content:space-between;align-items:center}
+.pos-controls{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.pos-controls button{flex:1;min-width:70px;padding:8px 6px;border:1px solid #e0e0e0;border-radius:6px;background:#fff;font-size:11px;font-weight:700;cursor:pointer}
+.pos-controls button:active{background:#f0f0f0}
+.badge-pos{font-size:10px;background:#EAF3DE;padding:4px 8px;border-radius:10px;color:#2d5a0a}
 .campo-row{display:flex;flex-direction:column;gap:4px;margin-bottom:10px} .campo-row label{font-size:10px;font-weight:700;color:#999;text-transform:uppercase}
 .campo-row input{padding:10px;border:1.5px solid #e0e0e0;border-radius:8px;font-size:14px}
-.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;padding:10px 18px;border-radius:20px;font-size:12px;opacity:0;transition:.25s;pointer-events:none} .toast.show{opacity:1}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1a1a1a;color:#fff;padding:10px 18px;border-radius:20px;font-size:12px;opacity:0;transition:.25s;pointer-events:none;z-index:99} .toast.show{opacity:1}
 .istr{font-size:11px;background:#EAF3DE;padding:8px 10px;border-radius:6px;margin-bottom:10px;color:#27500A}
+.preview-mini{margin-top:8px;border:1px solid #e0e0e0;border-radius:8px;overflow:hidden;background:#f9f9f9;padding:8px}
+.preview-mini canvas{width:100%;border:1px dashed #ccc;border-radius:4px;background:#fff}
 </style>
 </head>
 <body>
-<div class="hdr">⚡ Professione Tutela Utenze — Firma (FIX stabile + campi editabili)</div>
+<div class="hdr">⚡ Professione Tutela Utenze — Firma precisa + sposta firma</div>
 <div class="wrap">
 <div id="stato" class="card" style="text-align:center;padding:30px"><div id="stato_t">Caricamento documento...</div></div>
 <div id="anteprima" style="display:none" class="card"><div style="font-size:11px;font-weight:700;color:#666;margin-bottom:8px">📄 Documento</div><div class="pdf-wrap"><canvas id="pdf_canvas" class="pdf-canvas"></canvas></div><button class="btn btn-primary" onclick="vaiFirma()">✍️ Procedi alla firma</button></div>
 <div id="schermo_firma" style="display:none">
-<div class="card"><div style="font-weight:700;font-size:12px;margin-bottom:8px">📝 Verifica i tuoi dati — ora puoi modificarli (PDF editabile)</div>
-<div class="istr">✅ Puoi correggere i dati qui prima di firmare. Verranno salvati nel PDF finale.</div>
-<div class="campo-row"><label>Luogo firma</label><input id="inp_luogo" placeholder="Bari"></div>
+<div class="card"><div style="font-weight:700;font-size:12px;margin-bottom:8px">📝 Verifica i tuoi dati</div>
+<div class="istr">✅ Ora la firma è precisa! Se il cliente sbaglia, usa le frecce per spostarla + anteprima.</div>
+<div class="campo-row"><label>Luogo firma</label><input id="inp_luogo" placeholder="Es. Bari"></div>
 <div class="campo-row"><label>Data</label><input id="inp_data" type="date"></div>
 <div id="campi_editabili"></div></div>
 <div id="firme_container"></div>
@@ -42,10 +49,10 @@
 <script>
 firebase.initializeApp({apiKey:"AIzaSyCVqrDWJDLtyGUzPBtvkHOMxBERO4ixKX0",authDomain:"crm-servizi.firebaseapp.com",projectId:"crm-servizi"});
 const db=firebase.firestore();
+const authReady=firebase.auth().signInAnonymously().catch(e=>{ alert('Accesso anonimo non riuscito: '+e.code+' - '+e.message+'\nControlla che in Firebase > Authentication > Metodo di accesso sia attivo "Anonimo"'); });
 pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 let invioData=null, templateData=null, docInvioId=null, pdfDoc=null, firme=[];
 const params=new URLSearchParams(location.search); docInvioId=params.get('id');
-
 async function init(){
   if(!docInvioId){ document.getElementById('stato_t').textContent='ID mancante'; return; }
   const invioSnap=await db.collection('mod_invii').doc(docInvioId).get(); if(!invioSnap.exists){ document.getElementById('stato_t').textContent='Invio non trovato'; return; }
@@ -62,35 +69,67 @@ function vaiFirma(){
   box.innerHTML=Object.keys(dati).map(k=>`<div class="campo-row"><label>${k} (editabile)</label><input id="edit_${k}" value="${String(dati[k]||'').replace(/"/g,'&quot;')}"></div>`).join('');
   const cont=document.getElementById('firme_container'); const elementi=templateData.elementi||[]; firme=[];
   cont.innerHTML=elementi.filter(e=>e.tipo==='firma').map((el,idx)=>{
-    firme.push({pagina:el.pagina||1, xPct:el.xPct, yPct:el.yPct, wPct:el.wPct||0.26, hPct:el.hPct||0.065, dataUrl:null});
-    return `<div class="card"><div class="firma-label"><span>Firma ${idx+1} — Pagina ${el.pagina||1}</span><span id="badge_${idx}" style="font-size:10px;background:#FEF3E2;padding:2px 8px;border-radius:10px">In attesa</span></div><div class="firma-box"><canvas class="firma-canvas" id="cv_${idx}"></canvas></div><button class="btn" style="background:#fff;border:1px solid #e0e0e0" onclick="pulisci(${idx})">Pulisci</button></div>`;
-  }).join(''); setTimeout(initCanvases,100);
+    firme.push({pagina:el.pagina||1, xPct:el.xPct, yPct:el.yPct, wPct:el.wPct||0.26, hPct:el.hPct||0.065, dataUrl:null, strokes:[]});
+    return `<div class="card"><div class="firma-label"><span>Firma ${idx+1} — Pagina ${el.pagina||1}</span><span style="display:flex;gap:6px;align-items:center"><span id="badge_${idx}" style="font-size:10px;background:#FEF3E2;padding:2px 8px;border-radius:10px">In attesa</span><span id="pos_${idx}" class="badge-pos">X:${Math.round(el.xPct*100)}% Y:${Math.round(el.yPct*100)}%</span></span></div><div class="firma-box"><canvas class="firma-canvas" id="cv_${idx}"></canvas></div><div style="display:flex;gap:6px"><button class="btn" style="background:#fff;border:1px solid #e0e0e0;flex:1" onclick="pulisci(${idx})">🗑️ Pulisci</button><button class="btn" style="background:#fff;border:1px solid #e0e0e0;flex:1" onclick="annullaTratto(${idx})">↩️ Annulla tratto</button></div><div class="pos-controls"><button onclick="sposta(${idx},0,-0.02)">⬆️ Su</button><button onclick="sposta(${idx},0,0.02)">⬇️ Giù</button><button onclick="sposta(${idx},-0.02,0)">⬅️ Sinistra</button><button onclick="sposta(${idx},0.02,0)">➡️ Destra</button><button onclick="centra(${idx})">🎯 Centra</button><button onclick="ingrandisci(${idx},0.05)">➕ Grande</button><button onclick="ingrandisci(${idx},-0.05)">➖ Piccola</button></div><div class="preview-mini"><div style="font-size:10px;color:#888;margin-bottom:4px">Anteprima posizione — usa frecce se cliente sbaglia</div><canvas id="preview_${idx}" height="80"></canvas></div></div>`;
+  }).join(''); setTimeout(initCanvases,120);
 }
 function initCanvases(){
   firme.forEach((f,i)=>{
-    const cv=document.getElementById('cv_'+i); const dpr=window.devicePixelRatio||1; const rect=cv.getBoundingClientRect(); cv.width=rect.width*dpr; cv.height=200*dpr; const ctx=cv.getContext('2d'); ctx.scale(dpr,dpr); ctx.lineWidth=2.2; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#0f193c'; f.canvas=cv; f.ctx=ctx;
-    let dis=false,last=null; function pos(e){ const r=cv.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return {x:t.clientX-r.left,y:t.clientY-r.top}; }
-    function start(e){ e.preventDefault(); dis=true; last=pos(e); } function move(e){ if(!dis) return; e.preventDefault(); const p=pos(e); ctx.beginPath(); ctx.moveTo(last.x,last.y); ctx.lineTo(p.x,p.y); ctx.stroke(); last=p; } function end(){ if(!dis) return; dis=false; f.dataUrl=cv.toDataURL('image/png'); document.getElementById('badge_'+i).textContent='✓ Firmato'; document.getElementById('badge_'+i).style.background='#EAF3DE'; }
+    const cv=document.getElementById('cv_'+i); const dpr=window.devicePixelRatio||1; const rect=cv.getBoundingClientRect(); 
+    cv.width=rect.width*dpr; cv.height=240*dpr; 
+    const ctx=cv.getContext('2d'); ctx.scale(dpr,dpr); 
+    ctx.lineWidth=2.4; ctx.lineCap='round'; ctx.lineJoin='round'; ctx.strokeStyle='#0f193c';
+    ctx.translate(15,15);
+    f.canvas=cv; f.ctx=ctx; f.offsetX=15; f.offsetY=15; f.currentStroke=[];
+    let dis=false,last=null; 
+    function pos(e){ const r=cv.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return {x:(t.clientX-r.left)-f.offsetX,y:(t.clientY-r.top)-f.offsetY}; }
+    function start(e){ e.preventDefault(); dis=true; last=pos(e); f.currentStroke=[last]; } 
+    function move(e){ if(!dis) return; e.preventDefault(); const p=pos(e); ctx.beginPath(); ctx.moveTo(last.x,last.y); ctx.lineTo(p.x,p.y); ctx.stroke(); last=p; f.currentStroke.push(p); } 
+    function end(){ if(!dis) return; dis=false; if(f.currentStroke.length>1) f.strokes.push([...f.currentStroke]); f.currentStroke=[]; f.dataUrl=cv.toDataURL('image/png'); document.getElementById('badge_'+i).textContent='✓ Firmato'; document.getElementById('badge_'+i).style.background='#EAF3DE'; updatePreview(i); }
     cv.addEventListener('mousedown',start); cv.addEventListener('mousemove',move); window.addEventListener('mouseup',end);
     cv.addEventListener('touchstart',start,{passive:false}); cv.addEventListener('touchmove',move,{passive:false}); cv.addEventListener('touchend',end);
+    updatePreview(i);
   });
 }
-function pulisci(i){ const f=firme[i]; f.ctx.clearRect(0,0,f.canvas.width,f.canvas.height); f.dataUrl=null; document.getElementById('badge_'+i).textContent='In attesa'; document.getElementById('badge_'+i).style.background='#FEF3E2'; }
+function pulisci(i){ const f=firme[i]; const cv=f.canvas; f.ctx.clearRect(-f.offsetX,-f.offsetY,cv.width,cv.height); f.strokes=[]; f.dataUrl=null; document.getElementById('badge_'+i).textContent='In attesa'; document.getElementById('badge_'+i).style.background='#FEF3E2'; updatePreview(i); }
+function annullaTratto(i){
+  const f=firme[i]; if(f.strokes.length===0) return; f.strokes.pop();
+  const cv=f.canvas; f.ctx.clearRect(-f.offsetX,-f.offsetY,cv.width,cv.height);
+  f.strokes.forEach(st=>{ for(let j=1;j<st.length;j++){ f.ctx.beginPath(); f.ctx.moveTo(st[j-1].x,st[j-1].y); f.ctx.lineTo(st[j].x,st[j].y); f.ctx.stroke(); } });
+  if(f.strokes.length===0){ f.dataUrl=null; document.getElementById('badge_'+i).textContent='In attesa'; } else { f.dataUrl=cv.toDataURL('image/png'); }
+  updatePreview(i);
+}
+function sposta(i,dx,dy){
+  const f=firme[i]; f.xPct=Math.max(0,Math.min(0.9,f.xPct+dx)); f.yPct=Math.max(0,Math.min(0.9,f.yPct+dy));
+  document.getElementById('pos_'+i).textContent=`X:${Math.round(f.xPct*100)}% Y:${Math.round(f.yPct*100)}%`;
+  updatePreview(i); toast(`Spostata X:${Math.round(f.xPct*100)} Y:${Math.round(f.yPct*100)}`);
+}
+function centra(i){ const f=firme[i]; f.xPct=0.37; f.yPct=0.75; document.getElementById('pos_'+i).textContent=`X:${Math.round(f.xPct*100)}% Y:${Math.round(f.yPct*100)}%`; updatePreview(i); }
+function ingrandisci(i,d){ const f=firme[i]; f.wPct=Math.max(0.1,Math.min(0.6,f.wPct+d)); f.hPct=Math.max(0.03,Math.min(0.2,f.hPct+d*0.25)); updatePreview(i); }
+function updatePreview(i){
+  const f=firme[i]; const cv=document.getElementById('preview_'+i); if(!cv) return; const ctx=cv.getContext('2d'); const W=cv.width=300; const H=cv.height=80;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='#ddd'; ctx.strokeRect(10,5,W-20,H-10);
+  ctx.strokeStyle='#999'; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.moveTo(20,H-20); ctx.lineTo(W-20,H-20); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle='#666'; ctx.font='10px Arial'; ctx.fillText('Firma ................',25,H-24);
+  const x=10+(W-20)*f.xPct; const y=5+(H-10)*f.yPct; const w=(W-20)*f.wPct; const h=(H-10)*f.hPct;
+  ctx.strokeStyle='#e8a020'; ctx.lineWidth=1; ctx.setLineDash([2,2]); ctx.strokeRect(x,y,w,h); ctx.setLineDash([]);
+  if(f.dataUrl){ const img=new Image(); img.onload=()=>{ ctx.drawImage(img,x+2,y+2,w-4,h-4); }; img.src=f.dataUrl; }
+}
 async function invia(){
-  if(firme.some(f=>!f.dataUrl)){ toast('Firma tutti i campi'); return; }
+  if(firme.some(f=>!f.dataUrl)){ toast('Firma tutti i campi prima'); return; }
   const btn=document.getElementById('btn_invia'); btn.disabled=true; btn.textContent='⏳ Invio...';
   const luogo=document.getElementById('inp_luogo').value||''; const dataV=document.getElementById('inp_data').value||'';
   const datiEditati={}; document.querySelectorAll('[id^="edit_"]').forEach(inp=>{ const k=inp.id.replace('edit_',''); datiEditati[k]=inp.value; });
   const firmeElab=firme.map(f=>({pagina:f.pagina, dataUrl:f.dataUrl, pos:{xPct:f.xPct,yPct:f.yPct}, wPct:f.wPct, hPct:f.hPct}));
   try{
     await db.collection('mod_firmati').add({clienteId:invioData.clienteId||'', nomeCliente:invioData.nomeCliente||'', nomeModulo:templateData.nome||'', templateId:invioData.templateId, invioId:docInvioId, firmeData:firmeElab, luogo, data:dataV, datiEditati, timestamp:new Date().toISOString()});
-    // Notifica
-    try{ fetch('https://api.telegram.org/bot8878679679:AAEPAXzymdP5p_CwnLZN4zMnn0gDHmkQR9A/sendMessage?chat_id=5657428829&text='+encodeURIComponent('✅ Nuova firma FIX: '+(invioData.nomeCliente||'')+' - '+(templateData.nome||''))); }catch(e){}
-    document.getElementById('schermo_firma').innerHTML='<div class="card" style="text-align:center;padding:40px"><div style="font-size:40px">✅</div><div style="font-weight:700;margin-top:10px">Documento firmato!</div><div style="font-size:13px;color:#666;margin-top:6px">Grazie, il consulente riceverà il PDF corretto.</div></div>';
+    try{ fetch('https://api.telegram.org/bot8878679679:AAEPAXzymdP5p_CwnLZN4zMnn0gDHmkQR9A/sendMessage?chat_id=5657428829&text='+encodeURIComponent('✅ Firma PRECISA + pos regolabile: '+(invioData.nomeCliente||'') )); }catch(e){}
+    document.getElementById('schermo_firma').innerHTML='<div class="card" style="text-align:center;padding:40px"><div style="font-size:40px">✅</div><div style="font-weight:700;margin-top:10px">Documento firmato!</div><div style="font-size:13px;color:#666;margin-top:6px">PDF con firma precisa inviato.</div></div>';
   }catch(e){ toast('Errore '+e.message); btn.disabled=false; btn.textContent='📤 Invia'; }
 }
 function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2500); }
-init();
+authReady.then(()=>init());
 </script>
 </body>
 </html>
